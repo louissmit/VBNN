@@ -11,15 +11,16 @@ local VBparams = {}
 torch.setdefaulttensortype('torch.FloatTensor')
 
 function VBparams:init(params)
-    self.stdv = torch.Tensor(params:size()):fill(0.075)
-    self.means = torch.Tensor(params:size()):zero()
+    self.vars = torch.Tensor():typeAs(params):resizeAs(params):fill(0.075)
+    self.means = torch.Tensor():typeAs(params):resizeAs(params):zero()
+    self.W = params:size()
     return self
 end
 
 function VBparams:sampleW()
-    local w = torch.Tensor(self.means:size())
-    return w:map2(self.means, self.stdv, function(_, mean, st)
-        return torch.normal(mean, st)
+    local w = torch.Tensor(self.W)
+    return w:map2(self.means, self.vars, function(_, mean, var)
+        return torch.normal(mean, torch.sqrt(var))
     end)
 end
 

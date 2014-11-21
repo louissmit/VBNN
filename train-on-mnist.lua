@@ -31,22 +31,19 @@ VBparams = require('VBparams')
 local opt = lapp[[
    -s,--save          (default "logs")      subdirectory to save logs
    -n,--network       (default "")          reload pretrained network
-   -m,--model         (default "convnet")   type of model tor train: convnet | mlp | linear
    -f,--full                                use the full dataset
    -p,--plot                                plot while training
-   -o,--optimization  (default "SGD")       optimization: SGD | LBFGS 
    -r,--learningRate  (default 0.05)        learning rate, for SGD only
    -b,--batchSize     (default 10)          batch size
    -m,--momentum      (default 0)           momentum, for SGD only
-   -i,--maxIter       (default 3)           maximum nb of iterations per batch, for LBFGS
-   --coefL1           (default 0)           L1 penalty on the weights
-   --coefL2           (default 0)           L2 penalty on the weights
    -t,--threads       (default 4)           number of threads
 ]]
 
 opt.model = "mlp"
 opt.plot = true
 opt.batchSize = 100
+opt.momentum = 0.9
+opt.hidden = 128
 --opt.full = true
 -- fix seed
 torch.manualSeed(1)
@@ -78,38 +75,13 @@ if opt.network == '' then
    -- define model to train
    model = nn.Sequential()
 
-   if opt.model == 'convnet' then
-      ------------------------------------------------------------
-      -- convolutional network 
-      ------------------------------------------------------------
-      -- stage 1 : mean suppresion -> filter bank -> squashing -> max pooling
-      model:add(nn.SpatialConvolutionMM(1, 32, 5, 5))
-      model:add(nn.Tanh())
-      model:add(nn.SpatialMaxPooling(3, 3, 3, 3))
-      -- stage 2 : mean suppresion -> filter bank -> squashing -> max pooling
-      model:add(nn.SpatialConvolutionMM(32, 64, 5, 5))
-      model:add(nn.Tanh())
-      model:add(nn.SpatialMaxPooling(2, 2, 2, 2))
-      -- stage 3 : standard 2-layer MLP:
-      model:add(nn.Reshape(64*2*2))
-      model:add(nn.Linear(64*2*2, 200))
-      model:add(nn.Tanh())
-      model:add(nn.Linear(200, #classes))
-      ------------------------------------------------------------
-
-   elseif opt.model == 'mlp' then
-      ------------------------------------------------------------
-      -- regular 2-layer MLP
-      ------------------------------------------------------------
-      model:add(nn.Reshape(1024))
-      model:add(nn.Linear(1024, 512))
-      model:add(nn.Tanh())
-      model:add(nn.Linear(512,#classes))
-   else
-      print('Unknown model type')
-      cmd:text()
-      error()
-   end
+   ------------------------------------------------------------
+   -- regular 2-layer MLP
+   ------------------------------------------------------------
+   model:add(nn.Reshape(1024))
+   model:add(nn.Linear(1024, opt.hidden))
+   model:add(nn.Tanh())
+   model:add(nn.Linear(opt.hidden, #classes))
 else
    print('<trainer> reloading previously trained network')
    model = torch.load(opt.network)
@@ -117,6 +89,7 @@ end
 
 -- retrieve parameters and gradients
 parameters,gradParameters = model:getParameters()
+W = parameters:size(1)
 
 -- verbose
 print('<mnist> using model:')
@@ -153,23 +126,18 @@ testData:normalizeGlobal(mean, std)
 -- define training and testing functions
 --
 
--- this matrix records the current confusion across classes
-confusion = optim.ConfusionMatrix(classes)
-
 -- log results to files
 trainLogger = optim.Logger(paths.concat(opt.save, 'train.log'))
 testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
 
 -- training function
-function train(dataset)
+function train(dataset, type)
    -- epoch tracker
    epoch = epoch or 1
 
    -- local vars
    local time = sys.clock()
    local avg_error = 0
---   local to_optimize = beta.means
-   local to_optimize = parameters
 
    -- do one epoch
    print('<trainer> on training set:')
@@ -189,87 +157,63 @@ function train(dataset)
          targets[k] = target
          k = k + 1
       end
+      collectgarbage()
+
+      -- reset gradients
+      gradParameters:zero()
+
+      -- evaluate function for complete mini batch
+      local outputs = model:forward(inputs)
+
+      -- estimate df/dW
+      local df_do = criterion:backward(outputs, targets)
+      model:backward(inputs, df_do)
 
       -- create closure to evaluate f(X) and df/dX
-      local feval = function(x)
-         -- just in case:
-         collectgarbage()
+      local feval = function(x) return f, gradParameters end
+      -- Perform SGD step:
+      sgdState = sgdState or {
+         learningRate = opt.learningRate,
+         momentum = opt.momentum,
+         learningRateDecay = 5e-7
+      }
+      if type == 'vb' then
 
-         -- get new parameters
-         if x ~= parameters then
-            parameters:copy(x)
-         end
---         parameters:copy(beta:sampleW())
+         -- update optimal prior alpha
+         local mu_hat = (1/W)*torch.sum(beta.means)
+         local muhats = torch.Tensor(W):fill(mu_hat)
+         local mu_sqe = torch.add(beta.means, torch.mul(muhats,-1)):pow(2)
 
-         -- reset gradients
-         gradParameters:zero()
+         local var_hat = torch.sum(torch.add(beta.vars, mu_sqe))
+         var_hat = (1/W)*var_hat
 
-         -- evaluate function for complete mini batch
-         local outputs = model:forward(inputs)
+         local vb_mugrads = torch.add(beta.means, -muhats):mul(1/(var_hat*opt.batchSize)):add(gradParameters)
+
+         local varhats = torch.Tensor(W):fill(var_hat)
+         local vb_vargrads = torch.add(torch.pow(varhats,-1), -torch.pow(beta.vars, -1)):mul(1/opt.batchSize)
+         vb_vargrads:add(torch.pow(gradParameters, 2))
+         vb_vargrads:mul(1/2)
+
+--         local LC = torch.add(torch.Tensor(W):fill(torch.log(var_hat)), -torch.log(beta.vars))
+--         LC:add(mu_sqe, torch.add(beta.vars, varhats)):mul(1/2*var_hat)
+         local f = criterion:forward(outputs, targets) --+ torch.sum(LC)
+
+         avg_error = avg_error + f
+
+         -- optimize variational posterior
+         optim.sgd(function(_) return f, vb_mugrads end, beta.means, sgdState)
+         optim.sgd(function(_) return f, vb_vargrads end, beta.vars, sgdState)
+         parameters:copy(beta:sampleW())
+      else
          local f = criterion:forward(outputs, targets)
 
          avg_error = avg_error + f
-         -- estimate df/dW
-         local df_do = criterion:backward(outputs, targets)
-         model:backward(inputs, df_do)
-
-         -- penalties (L1 and L2):
-         if opt.coefL1 ~= 0 or opt.coefL2 ~= 0 then
-            -- locals:
-            print "regularizing!"
-            local norm,sign= torch.norm,torch.sign
-
-            -- Loss:
-            f = f + opt.coefL1 * norm(parameters,1)
-            f = f + opt.coefL2 * norm(parameters,2)^2/2
-
-            -- Gradients:
-            gradParameters:add( sign(parameters):mul(opt.coefL1) + parameters:clone():mul(opt.coefL2) )
-         end
-
-         -- update confusion
---         for i = 1,opt.batchSize do
---            confusion:add(outputs[i], targets[i])
---         end
-
-         -- return f and df/dX
-         return f,gradParameters
+         optim.sgd(feval, parameters, sgdState)
       end
 
 
-
-      -- optimize on current mini-batch
-      if opt.optimization == 'LBFGS' then
-
-         -- Perform LBFGS step:
-         lbfgsState = lbfgsState or {
-            maxIter = opt.maxIter,
-            lineSearch = optim.lswolfe
-         }
-         optim.lbfgs(feval, parameters, lbfgsState)
-       
-         -- disp report:
-         print('LBFGS step')
-         print(' - progress in batch: ' .. t .. '/' .. dataset:size())
-         print(' - nb of iterations: ' .. lbfgsState.nIter)
-         print(' - nb of function evalutions: ' .. lbfgsState.funcEval)
-
-      elseif opt.optimization == 'SGD' then
-
-         -- Perform SGD step:
-         sgdState = sgdState or {
-            learningRate = opt.learningRate,
-            momentum = opt.momentum,
-            learningRateDecay = 5e-7
-         }
-         optim.sgd(feval, to_optimize, sgdState)
-      
-         -- disp progress
-         xlua.progress(t, dataset:size())
-
-      else
-         error('unknown optimization method')
-      end
+      -- disp progress
+      xlua.progress(t, dataset:size())
    end
    
    -- time taken
@@ -278,11 +222,7 @@ function train(dataset)
    print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
    avg_error = avg_error / (dataset:size() / opt.batchSize)
-   trainLogger:add{['% mean class accuracy (train set)'] = avg_error * 100}
-   -- print confusion matrix
---   print(confusion)
---   trainLogger:add{['% mean class accuracy (train set)'] = confusion.totalValid * 100}
---   confusion:zero()
+   trainLogger:add{['% error (train set)'] = avg_error * 100}
 
    -- save/log current net
    local filename = paths.concat(opt.save, 'mnist.net')
@@ -335,7 +275,7 @@ function test(dataset)
 --      end
    end
    avg_error = avg_error / (dataset:size() / opt.batchSize)
-   testLogger:add{['% mean class accuracy (test set)'] = avg_error * 100}
+   testLogger:add{['% error (test set)'] = avg_error * 100}
    -- timing
    time = sys.clock() - time
    time = time / dataset:size()
@@ -352,13 +292,13 @@ end
 --
 while true do
    -- train/test
-   train(trainData)
+   train(trainData, 'vb')
    test(testData)
 
    -- plot errors
    if opt.plot then
-      trainLogger:style{['% mean class accuracy (train set)'] = '-'}
-      testLogger:style{['% mean class accuracy (test set)'] = '-'}
+      trainLogger:style{['% error (train set)'] = '-'}
+      testLogger:style{['% error (test set)'] = '-'}
       trainLogger:plot()
       testLogger:plot()
    end
