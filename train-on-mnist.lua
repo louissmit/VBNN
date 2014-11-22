@@ -17,32 +17,37 @@
 
 --require 'torch'
 require 'nn'
-require 'nnx'
+--require 'nnx'
 require 'optim'
-require 'image'
+--require 'image'
 require 'dataset-mnist'
-require 'pl'
-require 'paths'
+--require 'pl'
+--require 'paths'
 VBparams = require('VBparams')
 
 ----------------------------------------------------------------------
 -- parse command-line options
 --
-local opt = lapp[[
-   -s,--save          (default "logs")      subdirectory to save logs
-   -n,--network       (default "")          reload pretrained network
-   -f,--full                                use the full dataset
-   -p,--plot                                plot while training
-   -r,--learningRate  (default 0.05)        learning rate, for SGD only
-   -b,--batchSize     (default 10)          batch size
-   -m,--momentum      (default 0)           momentum, for SGD only
-   -t,--threads       (default 4)           number of threads
-]]
-
+--local opt = lapp[[
+--   -s,--save          (default "logs")      subdirectory to save logs
+--   -n,--network       (default "")          reload pretrained network
+--   -f,--full                                use the full dataset
+--   -p,--plot                                plot while training
+--   -r,--learningRate  (default 0.05)        learning rate, for SGD only
+--   -b,--batchSize     (default 10)          batch size
+--   -m,--momentum      (default 0)           momentum, for SGD only
+--   -t,--threads       (default 4)           number of threads
+--]]
+opt = {}
+opt.threads = 8
+opt.network = ""
+opt.save = "logs"
+opt.network_name = "vbrprop"
 opt.model = "mlp"
 opt.plot = true
+opt.learningRate = 0.1
 opt.batchSize = 100
-opt.momentum = 0.9
+opt.momentum = 0.09
 opt.hidden = 128
 --opt.full = true
 -- fix seed
@@ -88,7 +93,7 @@ else
 end
 
 -- retrieve parameters and gradients
-parameters,gradParameters = model:getParameters()
+parameters, gradParameters = model:getParameters()
 W = parameters:size(1)
 
 -- verbose
@@ -162,6 +167,10 @@ function train(dataset, type)
       -- reset gradients
       gradParameters:zero()
 
+      if type == 'vb' then
+         parameters:copy(beta:sampleW())
+      end
+
       -- evaluate function for complete mini batch
       local outputs = model:forward(inputs)
 
@@ -170,7 +179,6 @@ function train(dataset, type)
       model:backward(inputs, df_do)
 
       -- create closure to evaluate f(X) and df/dX
-      local feval = function(x) return f, gradParameters end
       -- Perform SGD step:
       sgdState = sgdState or {
          learningRate = opt.learningRate,
@@ -194,19 +202,28 @@ function train(dataset, type)
          vb_vargrads:add(torch.pow(gradParameters, 2))
          vb_vargrads:mul(1/2)
 
---         local LC = torch.add(torch.Tensor(W):fill(torch.log(var_hat)), -torch.log(beta.vars))
---         LC:add(mu_sqe, torch.add(beta.vars, varhats)):mul(1/2*var_hat)
-         local f = criterion:forward(outputs, targets) --+ torch.sum(LC)
+         local LC = torch.add(torch.Tensor(W):fill(torch.log(var_hat)), -torch.log(beta.vars))
+         LC:add(mu_sqe, torch.add(beta.vars, varhats)):mul(1/2*var_hat)
+         local LE = criterion:forward(outputs, targets)
+         local LD = LE + torch.sum(LC)
 
-         avg_error = avg_error + f
+         avg_error = avg_error + LE
 
          -- optimize variational posterior
-         optim.sgd(function(_) return f, vb_mugrads end, beta.means, sgdState)
-         optim.sgd(function(_) return f, vb_vargrads end, beta.vars, sgdState)
-         parameters:copy(beta:sampleW())
+--         optim.sgd(function(_) return f, vb_mugrads end, beta.means, sgdState)
+--         optim.sgd(function(_) return f, vb_vargrads end, beta.vars, sgdState)
+         local meanrpropState = {
+            stepsize = 0.001
+         }
+         local varrpropState = {
+            stepsize = 0.001
+         }
+         optim.rprop(function(_) return LD, vb_mugrads end, beta.means, meanrpropState)
+         optim.rprop(function(_) return LD, vb_vargrads end, beta.vars, varrpropState)
       else
          local f = criterion:forward(outputs, targets)
 
+         local feval = function(x) return f, gradParameters end
          avg_error = avg_error + f
          optim.sgd(feval, parameters, sgdState)
       end
@@ -225,13 +242,13 @@ function train(dataset, type)
    trainLogger:add{['% error (train set)'] = avg_error * 100}
 
    -- save/log current net
-   local filename = paths.concat(opt.save, 'mnist.net')
+   local filename = paths.concat(opt.save, opt.network_name)
    os.execute('mkdir -p ' .. sys.dirname(filename))
    if paths.filep(filename) then
       os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
    end
    print('<trainer> saving network to '..filename)
-   -- torch.save(filename, model)
+   torch.save(filename, model)
 
    -- next epoch
    epoch = epoch + 1
