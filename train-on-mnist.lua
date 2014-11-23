@@ -21,6 +21,7 @@ require 'nn'
 require 'optim'
 --require 'image'
 require 'dataset-mnist'
+require 'gfx.js'
 --require 'pl'
 --require 'paths'
 VBparams = require('VBparams')
@@ -48,7 +49,8 @@ opt.plot = true
 opt.learningRate = 0.1
 opt.batchSize = 100
 opt.momentum = 0.09
-opt.hidden = 128
+opt.hidden = 24
+opt.S = 10
 --opt.full = true
 -- fix seed
 torch.manualSeed(1)
@@ -143,6 +145,7 @@ function train(dataset, type)
    -- local vars
    local time = sys.clock()
    local avg_error = 0
+   local B = dataset:size()/opt.batchSize
 
    -- do one epoch
    print('<trainer> on training set:')
@@ -166,18 +169,6 @@ function train(dataset, type)
 
       -- reset gradients
       gradParameters:zero()
-
-      if type == 'vb' then
-         parameters:copy(beta:sampleW())
-      end
-
-      -- evaluate function for complete mini batch
-      local outputs = model:forward(inputs)
-
-      -- estimate df/dW
-      local df_do = criterion:backward(outputs, targets)
-      model:backward(inputs, df_do)
-
       -- create closure to evaluate f(X) and df/dX
       -- Perform SGD step:
       sgdState = sgdState or {
@@ -186,6 +177,19 @@ function train(dataset, type)
          learningRateDecay = 5e-7
       }
       if type == 'vb' then
+         -- sample W
+         local LN_squared = torch.Tensor(W)
+         local outputs
+         local LE = 0
+         for i = 1, opt.S do
+            parameters:copy(beta:sampleW())
+            outputs = model:forward(inputs)
+            local df_do = criterion:backward(outputs, targets)
+            model:backward(inputs, df_do)
+            LE = LE + criterion:forward(outputs, targets)
+            LN_squared:add(torch.pow(gradParameters, 2))
+         end
+         LE = LE/opt.S
 
          -- update optimal prior alpha
          local mu_hat = (1/W)*torch.sum(beta.means)
@@ -195,16 +199,15 @@ function train(dataset, type)
          local var_hat = torch.sum(torch.add(beta.vars, mu_sqe))
          var_hat = (1/W)*var_hat
 
-         local vb_mugrads = torch.add(beta.means, -muhats):mul(1/(var_hat*opt.batchSize)):add(gradParameters)
+         local vb_mugrads = torch.add(beta.means, -muhats):mul(1/(var_hat*B)):add(torch.mul(gradParameters, 1/opt.S))
 
          local varhats = torch.Tensor(W):fill(var_hat)
-         local vb_vargrads = torch.add(torch.pow(varhats,-1), -torch.pow(beta.vars, -1)):mul(1/opt.batchSize)
-         vb_vargrads:add(torch.pow(gradParameters, 2))
+         local vb_vargrads = torch.add(torch.pow(varhats,-1), -torch.pow(beta.vars, -1)):mul(1/B)
+         vb_vargrads:add(LN_squared:mul(1/opt.S))
          vb_vargrads:mul(1/2)
 
          local LC = torch.add(torch.Tensor(W):fill(torch.log(var_hat)), -torch.log(beta.vars))
          LC:add(mu_sqe, torch.add(beta.vars, varhats)):mul(1/2*var_hat)
-         local LE = criterion:forward(outputs, targets)
          local LD = LE + torch.sum(LC)
 
          avg_error = avg_error + LE
@@ -212,15 +215,21 @@ function train(dataset, type)
          -- optimize variational posterior
 --         optim.sgd(function(_) return f, vb_mugrads end, beta.means, sgdState)
 --         optim.sgd(function(_) return f, vb_vargrads end, beta.vars, sgdState)
-         local meanrpropState = {
+         meanrpropState = {
             stepsize = 0.001
          }
-         local varrpropState = {
+         varrpropState = {
             stepsize = 0.001
          }
          optim.rprop(function(_) return LD, vb_mugrads end, beta.means, meanrpropState)
          optim.rprop(function(_) return LD, vb_vargrads end, beta.vars, varrpropState)
       else
+         -- evaluate function for complete mini batch
+         local outputs = model:forward(inputs)
+
+         -- estimate df/dW
+         local df_do = criterion:backward(outputs, targets)
+         model:backward(inputs, df_do)
          local f = criterion:forward(outputs, targets)
 
          local feval = function(x) return f, gradParameters end
@@ -230,7 +239,7 @@ function train(dataset, type)
 
 
       -- disp progress
-      xlua.progress(t, dataset:size())
+--      xlua.progress(t, dataset:size())
    end
    
    -- time taken
@@ -239,7 +248,9 @@ function train(dataset, type)
    print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
    avg_error = avg_error / (dataset:size() / opt.batchSize)
-   trainLogger:add{['% error (train set)'] = avg_error * 100}
+   trainLogger:add{['% error (train set)'] = avg_error * 100 }
+   local img = torch.reshape(beta.means, 10, W/10)
+   gfx.image(img,{zoom=3.5, legend='means'})
 
    -- save/log current net
    local filename = paths.concat(opt.save, opt.network_name)
@@ -264,7 +275,7 @@ function test(dataset)
    local avg_error = 0
    for t = 1,dataset:size(),opt.batchSize do
       -- disp progress
-      xlua.progress(t, dataset:size())
+--      xlua.progress(t, dataset:size())
 
       -- create mini batch
       local inputs = torch.Tensor(opt.batchSize,1,geometry[1],geometry[2])
@@ -279,6 +290,10 @@ function test(dataset)
          inputs[k] = input
          targets[k] = target
          k = k + 1
+      end
+
+      if type == 'vb' then
+         parameters:copy(beta.means)
       end
 
       -- test samples
