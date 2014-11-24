@@ -19,6 +19,7 @@
 require 'nn'
 --require 'nnx'
 require 'optim'
+print("HELLO WORLD")
 --require 'image'
 require 'dataset-mnist'
 require 'gfx.js'
@@ -41,15 +42,15 @@ VBparams = require('VBparams')
 --]]
 opt = {}
 opt.threads = 8
-opt.network = ""
+opt.network = "asdf"
 opt.save = "logs"
-opt.network_name = "vbrprop"
+opt.network_name = "asdf"
 opt.model = "mlp"
 opt.plot = true
 opt.learningRate = 0.1
 opt.batchSize = 100
 opt.momentum = 0.09
-opt.hidden = 24
+opt.hidden = 11
 opt.S = 10
 --opt.full = true
 -- fix seed
@@ -78,25 +79,29 @@ classes = {'0','1','2','3','4','5','6','7','8','9'}
 -- geometry: width and height of input images
 geometry = {32,32}
 
-if opt.network == '' then
-   -- define model to train
-   model = nn.Sequential()
-
-   ------------------------------------------------------------
-   -- regular 2-layer MLP
-   ------------------------------------------------------------
-   model:add(nn.Reshape(1024))
-   model:add(nn.Linear(1024, opt.hidden))
-   model:add(nn.Tanh())
-   model:add(nn.Linear(opt.hidden, #classes))
-else
-   print('<trainer> reloading previously trained network')
-   model = torch.load(opt.network)
-end
+-- define model to train
+model = nn.Sequential()
+------------------------------------------------------------
+-- regular 2-layer MLP
+------------------------------------------------------------
+model:add(nn.Reshape(1024))
+model:add(nn.Linear(1024, opt.hidden))
+model:add(nn.ReLU())
+model:add(nn.Linear(opt.hidden, #classes))
 
 -- retrieve parameters and gradients
 parameters, gradParameters = model:getParameters()
 W = parameters:size(1)
+print("nr. of parameters: ", W)
+
+if opt.network == '' then
+   beta = VBparams:init(parameters)
+else
+   print('<trainer> reloading previously trained network')
+   local filename = paths.concat(opt.save, opt.network_name)
+   beta = torch.load(filename)
+end
+
 
 -- verbose
 print('<mnist> using model:')
@@ -107,7 +112,6 @@ print(model)
 --
 model:add(nn.LogSoftMax())
 criterion = nn.ClassNLLCriterion()
-beta = VBparams:init(parameters)
 
 ----------------------------------------------------------------------
 -- get/create dataset
@@ -139,6 +143,7 @@ testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
 
 -- training function
 function train(dataset, type)
+   print("Training!")
    -- epoch tracker
    epoch = epoch or 1
 
@@ -178,9 +183,11 @@ function train(dataset, type)
       }
       if type == 'vb' then
          -- sample W
-         local LN_squared = torch.Tensor(W)
+         local LN_squared = torch.Tensor(W):zero()
+         local gradsum = torch.Tensor(W):zero()
          local outputs
          local LE = 0
+--         local epsilon = 2*sqrt(1e-12)*(1+torch.norm(beta.means))
          for i = 1, opt.S do
             parameters:copy(beta:sampleW())
             outputs = model:forward(inputs)
@@ -188,6 +195,8 @@ function train(dataset, type)
             model:backward(inputs, df_do)
             LE = LE + criterion:forward(outputs, targets)
             LN_squared:add(torch.pow(gradParameters, 2))
+            gradsum:add(gradParameters)
+            gradParameters:zero()
          end
          LE = LE/opt.S
 
@@ -199,7 +208,7 @@ function train(dataset, type)
          local var_hat = torch.sum(torch.add(beta.vars, mu_sqe))
          var_hat = (1/W)*var_hat
 
-         local vb_mugrads = torch.add(beta.means, -muhats):mul(1/(var_hat*B)):add(torch.mul(gradParameters, 1/opt.S))
+         local vb_mugrads = torch.add(beta.means, -muhats):mul(1/(var_hat*B)):add(torch.mul(gradsum, 1/opt.S))
 
          local varhats = torch.Tensor(W):fill(var_hat)
          local vb_vargrads = torch.add(torch.pow(varhats,-1), -torch.pow(beta.vars, -1)):mul(1/B)
@@ -207,7 +216,7 @@ function train(dataset, type)
          vb_vargrads:mul(1/2)
 
          local LC = torch.add(torch.Tensor(W):fill(torch.log(var_hat)), -torch.log(beta.vars))
-         LC:add(mu_sqe, torch.add(beta.vars, varhats)):mul(1/2*var_hat)
+         LC:add(mu_sqe, torch.add(beta.vars, -varhats)):mul(1/2*var_hat)
          local LD = LE + torch.sum(LC)
 
          avg_error = avg_error + LE
@@ -215,14 +224,26 @@ function train(dataset, type)
          -- optimize variational posterior
 --         optim.sgd(function(_) return f, vb_mugrads end, beta.means, sgdState)
 --         optim.sgd(function(_) return f, vb_vargrads end, beta.vars, sgdState)
-         meanrpropState = {
-            stepsize = 0.001
+--         meanrpropState = {
+--            stepsize = 0.001
+--         }
+--         varrpropState = {
+--            stepsize = 0.0001
+--         }
+         meansgdState = {
+            learningRate = 0.001,
+            momentum = 0.9,
+            learningRateDecay = 5e-7
          }
-         varrpropState = {
-            stepsize = 0.001
+         varsgdState = {
+            learningRate = 0.001,
+            momentum = 0.9,
+            learningRateDecay = 5e-7
          }
-         optim.rprop(function(_) return LD, vb_mugrads end, beta.means, meanrpropState)
-         optim.rprop(function(_) return LD, vb_vargrads end, beta.vars, varrpropState)
+         print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
+         print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
+         optim.sgd(function(_) return LD, vb_mugrads end, beta.means, meansgdState)
+         optim.sgd(function(_) return LD, vb_vargrads end, beta.vars, varsgdState)
       else
          -- evaluate function for complete mini batch
          local outputs = model:forward(inputs)
@@ -239,7 +260,7 @@ function train(dataset, type)
 
 
       -- disp progress
---      xlua.progress(t, dataset:size())
+      xlua.progress(t, dataset:size())
    end
    
    -- time taken
@@ -249,8 +270,25 @@ function train(dataset, type)
 
    avg_error = avg_error / (dataset:size() / opt.batchSize)
    trainLogger:add{['% error (train set)'] = avg_error * 100 }
-   local img = torch.reshape(beta.means, 10, W/10)
-   gfx.image(img,{zoom=3.5, legend='means'})
+   local weights = torch.Tensor(W):copy(beta.means):resize(opt.hidden, 32, 32)
+   local vars = torch.Tensor(W):copy(beta.vars):resize(opt.hidden, 32, 32)
+   local meanimgs = {}
+   local varimgs = {}
+   for i = 1, opt.hidden do
+      table.insert(meanimgs, weights[i])
+      table.insert(varimgs, vars[i])
+   end
+   print(torch.min(weights))
+   print(torch.max(weights))
+   print(torch.min(vars))
+   print(torch.max(vars))
+   gfx.image(meanimgs,{zoom=3.5, legend='means'})--, min=-0.4, max=0.4})
+   gfx.image(varimgs,{zoom=3.5, legend='vars'})--, min=0.0, max=0.5})
+--   gfx.chart(data, {
+--      chart = 'scatter', -- or: bar, stacked, multibar, scatter
+--      width = 600,
+--      height = 450,
+--   })
 
    -- save/log current net
    local filename = paths.concat(opt.save, opt.network_name)
@@ -259,14 +297,17 @@ function train(dataset, type)
       os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
    end
    print('<trainer> saving network to '..filename)
-   torch.save(filename, model)
+   torch.save(filename, beta)
 
    -- next epoch
    epoch = epoch + 1
 end
 
+total = 0
+correct = 0
 -- test function
 function test(dataset)
+   print("Testing!")
    -- local vars
    local time = sys.clock()
 
@@ -275,7 +316,7 @@ function test(dataset)
    local avg_error = 0
    for t = 1,dataset:size(),opt.batchSize do
       -- disp progress
---      xlua.progress(t, dataset:size())
+      xlua.progress(t, dataset:size())
 
       -- create mini batch
       local inputs = torch.Tensor(opt.batchSize,1,geometry[1],geometry[2])
@@ -324,14 +365,18 @@ end
 --
 while true do
    -- train/test
-   train(trainData, 'vb')
+--   train(trainData, 'vb')
    test(testData)
+   print(correct)
+   print(total)
+   print(correct/total)
+   break
 
    -- plot errors
-   if opt.plot then
-      trainLogger:style{['% error (train set)'] = '-'}
-      testLogger:style{['% error (test set)'] = '-'}
-      trainLogger:plot()
-      testLogger:plot()
-   end
+--   if opt.plot then
+--      trainLogger:style{['% error (train set)'] = '-'}
+--      testLogger:style{['% error (test set)'] = '-'}
+--      trainLogger:plot()
+--      testLogger:plot()
+--   end
 end
