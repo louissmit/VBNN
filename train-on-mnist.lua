@@ -22,7 +22,7 @@ require 'optim'
 print("HELLO WORLD")
 --require 'image'
 require 'dataset-mnist'
-require 'gfx.js'
+--require 'gfx.js'
 --require 'pl'
 --require 'paths'
 VBparams = require('VBparams')
@@ -42,16 +42,16 @@ VBparams = require('VBparams')
 --]]
 opt = {}
 opt.threads = 8
-opt.network = "asdf"
+opt.network = ""
 opt.save = "logs"
-opt.network_name = "asdf"
+opt.network_name = "sgdS1"
 opt.model = "mlp"
-opt.plot = true
+opt.plot = false
 opt.learningRate = 0.1
-opt.batchSize = 100
-opt.momentum = 0.09
-opt.hidden = 11
-opt.S = 10
+opt.batchSize = 1
+opt.momentum = 0.0
+opt.hidden = 28
+opt.S = 1
 --opt.full = true
 -- fix seed
 torch.manualSeed(1)
@@ -139,17 +139,32 @@ testData:normalizeGlobal(mean, std)
 
 -- log results to files
 trainLogger = optim.Logger(paths.concat(opt.save, 'train.log'))
+accLogger = optim.Logger(paths.concat(opt.save, 'acc.log'))
 testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
+function get_accuracy(outputs, targets)
+   local correct, total = 0, 0
+   for i = 1, targets:size(1) do
+      total = total + 1
+      _, index = outputs[i]:max(1)
+      if index[1] == targets[i] then
+         correct = correct + 1
+      end
+   end
+   return (correct / total)
+end
+
+
 
 -- training function
 function train(dataset, type)
    print("Training!")
    -- epoch tracker
    epoch = epoch or 1
+   local accuracy = 0
+   local avg_error = 0
 
    -- local vars
    local time = sys.clock()
-   local avg_error = 0
    local B = dataset:size()/opt.batchSize
 
    -- do one epoch
@@ -157,6 +172,7 @@ function train(dataset, type)
    print("<trainer> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
    for t = 1,dataset:size(),opt.batchSize do
       -- create mini batch
+--      local batchtime = sys.clock()
       local inputs = torch.Tensor(opt.batchSize,1,geometry[1],geometry[2])
       local targets = torch.Tensor(opt.batchSize)
       local k = 1
@@ -191,6 +207,7 @@ function train(dataset, type)
          for i = 1, opt.S do
             parameters:copy(beta:sampleW())
             outputs = model:forward(inputs)
+            accuracy = accuracy + get_accuracy(outputs, targets)
             local df_do = criterion:backward(outputs, targets)
             model:backward(inputs, df_do)
             LE = LE + criterion:forward(outputs, targets)
@@ -224,66 +241,66 @@ function train(dataset, type)
          -- optimize variational posterior
 --         optim.sgd(function(_) return f, vb_mugrads end, beta.means, sgdState)
 --         optim.sgd(function(_) return f, vb_vargrads end, beta.vars, sgdState)
---         meanrpropState = {
---            stepsize = 0.001
---         }
---         varrpropState = {
---            stepsize = 0.0001
---         }
-         meansgdState = {
-            learningRate = 0.001,
-            momentum = 0.9,
-            learningRateDecay = 5e-7
+         meanrpropState = {
+            stepsize = 0.001
          }
-         varsgdState = {
-            learningRate = 0.001,
-            momentum = 0.9,
-            learningRateDecay = 5e-7
+         varrpropState = {
+            stepsize = 0.0001
          }
-         print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
-         print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
-         optim.sgd(function(_) return LD, vb_mugrads end, beta.means, meansgdState)
-         optim.sgd(function(_) return LD, vb_vargrads end, beta.vars, varsgdState)
+--         meansgdState = {
+--            learningRate = 0.001,
+--            momentum = 0.9,
+--            learningRateDecay = 5e-7
+--         }
+--         varsgdState = {
+--            learningRate = 0.0001,
+--            momentum = 0.9,
+--            learningRateDecay = 5e-7
+--         }
+--         print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
+--         print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
+         optim.rprop(function(_) return LD, vb_mugrads end, beta.means, meanrpropState)
+         optim.rprop(function(_) return LD, vb_vargrads end, beta.vars, varrpropState)
       else
-         -- evaluate function for complete mini batch
-         local outputs = model:forward(inputs)
+          -- evaluate function for complete mini batch
+          local outputs = model:forward(inputs)
 
-         -- estimate df/dW
-         local df_do = criterion:backward(outputs, targets)
-         model:backward(inputs, df_do)
-         local f = criterion:forward(outputs, targets)
+          -- estimate df/dW
+          local df_do = criterion:backward(outputs, targets)
+          model:backward(inputs, df_do)
+          local f = criterion:forward(outputs, targets)
+          accuracy = accuracy + get_accuracy(outputs, targets)
+          avg_error = avg_error + f
 
-         local feval = function(x) return f, gradParameters end
-         avg_error = avg_error + f
-         optim.sgd(feval, parameters, sgdState)
+          optim.sgd(function(_) return f, gradParameters end, parameters, sgdState)
       end
-
+--      print("batchtime: ", sys.clock() - batchtime)
 
       -- disp progress
       xlua.progress(t, dataset:size())
    end
-   
+
    -- time taken
    time = sys.clock() - time
    time = time / dataset:size()
    print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
-   avg_error = avg_error / (dataset:size() / opt.batchSize)
-   trainLogger:add{['% error (train set)'] = avg_error * 100 }
-   local weights = torch.Tensor(W):copy(beta.means):resize(opt.hidden, 32, 32)
-   local vars = torch.Tensor(W):copy(beta.vars):resize(opt.hidden, 32, 32)
-   local meanimgs = {}
-   local varimgs = {}
-   for i = 1, opt.hidden do
-      table.insert(meanimgs, weights[i])
-      table.insert(varimgs, vars[i])
-   end
-   print(torch.min(weights))
-   print(torch.max(weights))
-   print(torch.min(vars))
-   print(torch.max(vars))
-   gfx.image(meanimgs,{zoom=3.5, legend='means'})--, min=-0.4, max=0.4})
-   gfx.image(varimgs,{zoom=3.5, legend='vars'})--, min=0.0, max=0.5})
+   avg_error = avg_error / B
+   trainLogger:add{['LL (train set)'] = avg_error }
+--   local weights = torch.Tensor(W):copy(beta.means):resize(opt.hidden, 32, 32)
+--   local vars = torch.Tensor(W):copy(beta.vars):resize(opt.hidden, 32, 32)
+--   local meanimgs = {}
+--   local varimgs = {}
+--   for i = 1, opt.hidden do
+--      table.insert(meanimgs, weights[i])
+--      table.insert(varimgs, vars[i])
+--   end
+   print(torch.min(beta.means))
+   print(torch.max(beta.means))
+   print(torch.min(beta.vars))
+   print(torch.max(beta.vars))
+--   gfx.image(meanimgs,{zoom=3.5, legend='means'})--, min=-0.4, max=0.4})
+--   gfx.image(varimgs,{zoom=3.5, legend='vars'})--, min=0.0, max=0.5})
 --   gfx.chart(data, {
 --      chart = 'scatter', -- or: bar, stacked, multibar, scatter
 --      width = 600,
@@ -301,12 +318,13 @@ function train(dataset, type)
 
    -- next epoch
    epoch = epoch + 1
+    return (accuracy / B) * 100
 end
 
-total = 0
-correct = 0
 -- test function
 function test(dataset)
+    local B = dataset:size()/opt.batchSize
+    local accuracy = 0
    print("Testing!")
    -- local vars
    local time = sys.clock()
@@ -316,7 +334,7 @@ function test(dataset)
    local avg_error = 0
    for t = 1,dataset:size(),opt.batchSize do
       -- disp progress
-      xlua.progress(t, dataset:size())
+--      xlua.progress(t, dataset:size())
 
       -- create mini batch
       local inputs = torch.Tensor(opt.batchSize,1,geometry[1],geometry[2])
@@ -339,6 +357,7 @@ function test(dataset)
 
       -- test samples
       local preds = model:forward(inputs)
+      accuracy = accuracy + get_accuracy(preds, targets)
       local err = criterion:forward(preds, targets)
       avg_error = avg_error + err
 
@@ -347,8 +366,9 @@ function test(dataset)
 --         confusion:add(preds[i], targets[i])
 --      end
    end
-   avg_error = avg_error / (dataset:size() / opt.batchSize)
-   testLogger:add{['% error (test set)'] = avg_error * 100}
+   avg_error = avg_error / B
+
+   testLogger:add{['LL (test set)'] = avg_error}
    -- timing
    time = sys.clock() - time
    time = time / dataset:size()
@@ -358,6 +378,7 @@ function test(dataset)
 --   print(confusion)
 --   testLogger:add{['% mean class accuracy (test set)'] = confusion.totalValid * 100}
 --   confusion:zero()
+    return (accuracy/B)*100
 end
 
 ----------------------------------------------------------------------
@@ -365,18 +386,16 @@ end
 --
 while true do
    -- train/test
---   train(trainData, 'vb')
-   test(testData)
-   print(correct)
-   print(total)
-   print(correct/total)
-   break
-
+   local trainaccuracy = train(trainData, 'vb')
+   local testaccuracy = test(testData)
+   accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy}
    -- plot errors
---   if opt.plot then
---      trainLogger:style{['% error (train set)'] = '-'}
---      testLogger:style{['% error (test set)'] = '-'}
---      trainLogger:plot()
---      testLogger:plot()
---   end
+   if opt.plot then
+      trainLogger:style{['LL (train set)'] = '-'}
+      accLogger:style{['% accuracy (train set)'] = '-', ['% accuracy (test set)'] = '-'}
+      testLogger:style{['LL (test set)'] = '-'}
+      trainLogger:plot()
+      testLogger:plot()
+      accLogger:plot()
+   end
 end

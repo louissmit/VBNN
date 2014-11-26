@@ -12,7 +12,7 @@ torch.setdefaulttensortype('torch.FloatTensor')
 
 function VBparams:init(params)
     self.W = params:size(1)
-    self.vars = torch.Tensor(W):fill(0.075)
+    self.vars = torch.Tensor(W):fill(0.005625)
     self.means = torch.Tensor(W):apply(function(_)
         return torch.normal(0, 0.1)
     end)
@@ -20,8 +20,7 @@ function VBparams:init(params)
 end
 
 function VBparams:sampleW()
-    local w = torch.Tensor(self.W)
-    return w:map2(self.means, self.vars, function(_, mean, var)
+    return torch.Tensor(W):map2(self.means, self.vars, function(_, mean, var)
         return torch.normal(mean, torch.sqrt(var))
     end)
 end
