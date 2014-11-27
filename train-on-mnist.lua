@@ -187,23 +187,24 @@ function train(dataset, type)
          -- update optimal prior alpha
          local mu_hat, var_hat = beta:compute_prior()
 
-         beta.means:add(epsilon)
-         local mu_hat, var_hat = beta:compute_prior()
-         local LC1 = beta:calc_LC()
-         beta.means:add(-2*epsilon)
-         local mu_hat, var_hat = beta:compute_prior()
-         local LC2 = beta:calc_LC()
-         beta.means:add(epsilon)
-         local mu_hat, var_hat = beta:compute_prior()
+         beta.vars:add(epsilon)
+--         local mu_hat, var_hat = beta:compute_prior()
+         local LC1 = beta:calc_LC(B)
+         beta.vars:add(-2*epsilon)
+--         local mu_hat, var_hat = beta:compute_prior()
+         local LC2 = beta:calc_LC(B)
+         beta.vars:add(epsilon)
+--         local mu_hat, var_hat = beta:compute_prior()
          local mu_gradcheck = torch.add(LC1, -LC2):mul(1 / (2*epsilon))
          local vb_mugrads, mlcg = beta:compute_mugrads(gradsum, B, opt.S)
-         print(torch.min(mlcg), torch.max(mlcg))
+
+         local vb_vargrads, vlcg = beta:compute_vargrads(LN_squared, B, opt.S)
+         print(torch.min(vlcg), torch.max(vlcg))
          print(torch.min(mu_gradcheck), torch.max(mu_gradcheck))
-         print(torch.min(mu_gradcheck - mlcg), torch.max(mu_gradcheck - mlcg))
-         local vb_vargrads, vlcg = beta:compute_vargrads(B, opt.S)
+         print(torch.min(mu_gradcheck - vlcg), torch.max(mu_gradcheck - vlcg))
 
 
-         local LC = beta:calc_LC()
+         local LC = beta:calc_LC(B)
          local LD = LE + torch.sum(LC)
 
          avg_error = avg_error + LE

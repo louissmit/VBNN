@@ -39,15 +39,16 @@ function VBparams:compute_mugrads(gradsum, B, S)
     return torch.add(lcg, torch.mul(gradsum, 1/S)), lcg
 end
 
-function VBparams:compute_vargrads(B, S)
-    local lcg = torch.add(torch.pow(self.var_hat,-1), -torch.pow(self.vars, -1)):mul(1/B)
+function VBparams:compute_vargrads(LN_squared, B, S)
+    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):mul(1/(2*B))
     return torch.add(lcg, LN_squared:mul(1/S)):mul(1/2), lcg
 end
 
-function VBparams:calc_LC()
+function VBparams:calc_LC(B)
+    self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
     local LCfirst = torch.add(-torch.log(torch.sqrt(self.vars)), torch.log(torch.sqrt(self.var_hat)))
     local LCsecond = torch.add(self.mu_sqe, torch.add(self.vars, -self.var_hat)):mul(1/(2*self.var_hat))
-    return LCfirst + LCsecond
+    return torch.add(LCfirst, LCsecond):mul(1/B)
 end
 
 return VBparams
