@@ -1,21 +1,3 @@
-----------------------------------------------------------------------
--- This script shows how to train different models on the MNIST 
--- dataset, using multiple optimization techniques (SGD, LBFGS)
---
--- This script demonstrates a classical example of training 
--- well-known models (convnet, MLP, logistic regression)
--- on a 10-class classification problem. 
---
--- It illustrates several points:
--- 1/ description of the model
--- 2/ choice of a loss function (criterion) to minimize
--- 3/ creation of a dataset as a simple Lua table
--- 4/ description of training and test procedures
---
--- Clement Farabet
-----------------------------------------------------------------------
-
---require 'torch'
 require 'nn'
 --require 'nnx'
 require 'optim'
@@ -27,25 +9,10 @@ require 'dataset-mnist'
 --require 'paths'
 VBparams = require('VBparams')
 
-----------------------------------------------------------------------
--- parse command-line options
---
---local opt = lapp[[
---   -s,--save          (default "logs")      subdirectory to save logs
---   -n,--network       (default "")          reload pretrained network
---   -f,--full                                use the full dataset
---   -p,--plot                                plot while training
---   -r,--learningRate  (default 0.05)        learning rate, for SGD only
---   -b,--batchSize     (default 10)          batch size
---   -m,--momentum      (default 0)           momentum, for SGD only
---   -t,--threads       (default 4)           number of threads
---]]
 opt = {}
 opt.threads = 8
-opt.network = ""
-opt.save = "logs"
+opt.network_to_load = ""
 opt.network_name = "sgdS1"
-opt.model = "mlp"
 opt.plot = false
 opt.learningRate = 0.1
 opt.batchSize = 1
@@ -94,14 +61,13 @@ parameters, gradParameters = model:getParameters()
 W = parameters:size(1)
 print("nr. of parameters: ", W)
 
-if opt.network == '' then
+if opt.network_to_load == '' then
    beta = VBparams:init(parameters)
 else
    print('<trainer> reloading previously trained network')
-   local filename = paths.concat(opt.save, opt.network_name)
+   local filename = paths.concat(opt.network_name, 'model')
    beta = torch.load(filename)
 end
-
 
 -- verbose
 print('<mnist> using model:')
@@ -138,9 +104,9 @@ testData:normalizeGlobal(mean, std)
 --
 
 -- log results to files
-trainLogger = optim.Logger(paths.concat(opt.save, 'train.log'))
-accLogger = optim.Logger(paths.concat(opt.save, 'acc.log'))
-testLogger = optim.Logger(paths.concat(opt.save, 'test.log'))
+trainLogger = optim.Logger(paths.concat(opt.network_name, 'train.log'))
+accLogger = optim.Logger(paths.concat(opt.network_name, 'acc.log'))
+testLogger = optim.Logger(paths.concat(opt.network_name, 'test.log'))
 function get_accuracy(outputs, targets)
    local correct, total = 0, 0
    for i = 1, targets:size(1) do
@@ -203,7 +169,6 @@ function train(dataset, type)
          local gradsum = torch.Tensor(W):zero()
          local outputs
          local LE = 0
---         local epsilon = 2*sqrt(1e-12)*(1+torch.norm(beta.means))
          for i = 1, opt.S do
             parameters:copy(beta:sampleW())
             outputs = model:forward(inputs)
@@ -217,50 +182,52 @@ function train(dataset, type)
          end
          LE = LE/opt.S
 
+         local epsilon = 2*torch.sqrt(1e-12)*(1+torch.norm(beta.means))
+         print(epsilon)
          -- update optimal prior alpha
-         local mu_hat = (1/W)*torch.sum(beta.means)
-         local muhats = torch.Tensor(W):fill(mu_hat)
-         local mu_sqe = torch.add(beta.means, torch.mul(muhats,-1)):pow(2)
+         local mu_hat, var_hat = beta:compute_prior()
 
-         local var_hat = torch.sum(torch.add(beta.vars, mu_sqe))
-         var_hat = (1/W)*var_hat
+         beta.means:add(epsilon)
+         local mu_hat, var_hat = beta:compute_prior()
+         local LC1 = beta:calc_LC()
+         beta.means:add(-2*epsilon)
+         local mu_hat, var_hat = beta:compute_prior()
+         local LC2 = beta:calc_LC()
+         beta.means:add(epsilon)
+         local mu_hat, var_hat = beta:compute_prior()
+         local mu_gradcheck = torch.add(LC1, -LC2):mul(1 / (2*epsilon))
+         local vb_mugrads, mlcg = beta:compute_mugrads(gradsum, B, opt.S)
+         print(torch.min(mlcg), torch.max(mlcg))
+         print(torch.min(mu_gradcheck), torch.max(mu_gradcheck))
+         print(torch.min(mu_gradcheck - mlcg), torch.max(mu_gradcheck - mlcg))
+         local vb_vargrads, vlcg = beta:compute_vargrads(B, opt.S)
 
-         local vb_mugrads = torch.add(beta.means, -muhats):mul(1/(var_hat*B)):add(torch.mul(gradsum, 1/opt.S))
 
-         local varhats = torch.Tensor(W):fill(var_hat)
-         local vb_vargrads = torch.add(torch.pow(varhats,-1), -torch.pow(beta.vars, -1)):mul(1/B)
-         vb_vargrads:add(LN_squared:mul(1/opt.S))
-         vb_vargrads:mul(1/2)
-
-         local LC = torch.add(torch.Tensor(W):fill(torch.log(var_hat)), -torch.log(beta.vars))
-         LC:add(mu_sqe, torch.add(beta.vars, -varhats)):mul(1/2*var_hat)
+         local LC = beta:calc_LC()
          local LD = LE + torch.sum(LC)
 
          avg_error = avg_error + LE
 
-         -- optimize variational posterior
---         optim.sgd(function(_) return f, vb_mugrads end, beta.means, sgdState)
---         optim.sgd(function(_) return f, vb_vargrads end, beta.vars, sgdState)
-         meanrpropState = {
-            stepsize = 0.001
-         }
-         varrpropState = {
-            stepsize = 0.0001
-         }
---         meansgdState = {
---            learningRate = 0.001,
---            momentum = 0.9,
---            learningRateDecay = 5e-7
+--         meanrpropState = {
+--            stepsize = 0.001
 --         }
---         varsgdState = {
---            learningRate = 0.0001,
---            momentum = 0.9,
---            learningRateDecay = 5e-7
+--         varrpropState = {
+--            stepsize = 0.0001
 --         }
---         print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
---         print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
-         optim.rprop(function(_) return LD, vb_mugrads end, beta.means, meanrpropState)
-         optim.rprop(function(_) return LD, vb_vargrads end, beta.vars, varrpropState)
+         meansgdState = {
+            learningRate = 0.0001,
+            momentum = 0.9,
+            learningRateDecay = 5e-7
+         }
+         varsgdState = {
+            learningRate = 0.0001,
+            momentum = 0.9,
+            learningRateDecay = 5e-7
+         }
+         print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
+         print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
+         optim.sgd(function(_) return LD, vb_mugrads end, beta.means, meansgdState)
+         optim.sgd(function(_) return LD, vb_vargrads end, beta.vars, varsgdState)
       else
           -- evaluate function for complete mini batch
           local outputs = model:forward(inputs)
@@ -308,7 +275,7 @@ function train(dataset, type)
 --   })
 
    -- save/log current net
-   local filename = paths.concat(opt.save, opt.network_name)
+   local filename = paths.concat(opt.network_name)
    os.execute('mkdir -p ' .. sys.dirname(filename))
    if paths.filep(filename) then
       os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
