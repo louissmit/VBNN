@@ -4,7 +4,7 @@ require 'optim'
 print("HELLO WORLD")
 --require 'image'
 require 'dataset-mnist'
---require 'gfx.js'
+require 'gfx.js'
 --require 'pl'
 --require 'paths'
 VBparams = require('VBparams')
@@ -13,12 +13,12 @@ opt = {}
 opt.threads = 8
 opt.network_to_load = ""
 opt.network_name = "sgdS1"
-opt.plot = false
+opt.plot = true
 opt.learningRate = 0.1
-opt.batchSize = 1
+opt.batchSize = 10
 opt.momentum = 0.0
 opt.hidden = 28
-opt.S = 1
+opt.S = 10
 --opt.full = true
 -- fix seed
 torch.manualSeed(1)
@@ -116,7 +116,7 @@ function get_accuracy(outputs, targets)
          correct = correct + 1
       end
    end
-   return (correct / total)
+   return (correct / total)*100
 end
 
 
@@ -181,28 +181,13 @@ function train(dataset, type)
             gradParameters:zero()
          end
          LE = LE/opt.S
+         accuracy = accuracy/opt.S
 
-         local epsilon = 2*torch.sqrt(1e-12)*(1+torch.norm(beta.means))
-         print(epsilon)
          -- update optimal prior alpha
          local mu_hat, var_hat = beta:compute_prior()
-
-         beta.vars:add(epsilon)
---         local mu_hat, var_hat = beta:compute_prior()
-         local LC1 = beta:calc_LC(B)
-         beta.vars:add(-2*epsilon)
---         local mu_hat, var_hat = beta:compute_prior()
-         local LC2 = beta:calc_LC(B)
-         beta.vars:add(epsilon)
---         local mu_hat, var_hat = beta:compute_prior()
-         local mu_gradcheck = torch.add(LC1, -LC2):mul(1 / (2*epsilon))
          local vb_mugrads, mlcg = beta:compute_mugrads(gradsum, B, opt.S)
 
          local vb_vargrads, vlcg = beta:compute_vargrads(LN_squared, B, opt.S)
-         print(torch.min(vlcg), torch.max(vlcg))
-         print(torch.min(mu_gradcheck), torch.max(mu_gradcheck))
-         print(torch.min(mu_gradcheck - vlcg), torch.max(mu_gradcheck - vlcg))
-
 
          local LC = beta:calc_LC(B)
          local LD = LE + torch.sum(LC)
@@ -216,7 +201,7 @@ function train(dataset, type)
 --            stepsize = 0.0001
 --         }
          meansgdState = {
-            learningRate = 0.0001,
+            learningRate = 0.01,
             momentum = 0.9,
             learningRateDecay = 5e-7
          }
@@ -255,20 +240,20 @@ function train(dataset, type)
 
    avg_error = avg_error / B
    trainLogger:add{['LL (train set)'] = avg_error }
---   local weights = torch.Tensor(W):copy(beta.means):resize(opt.hidden, 32, 32)
---   local vars = torch.Tensor(W):copy(beta.vars):resize(opt.hidden, 32, 32)
---   local meanimgs = {}
---   local varimgs = {}
---   for i = 1, opt.hidden do
---      table.insert(meanimgs, weights[i])
---      table.insert(varimgs, vars[i])
---   end
+   local weights = torch.Tensor(W):copy(beta.means):resize(opt.hidden, 32, 32)
+   local vars = torch.Tensor(W):copy(beta.vars):resize(opt.hidden, 32, 32)
+   local meanimgs = {}
+   local varimgs = {}
+   for i = 1, opt.hidden do
+      table.insert(meanimgs, weights[i])
+      table.insert(varimgs, vars[i])
+   end
    print(torch.min(beta.means))
    print(torch.max(beta.means))
    print(torch.min(beta.vars))
    print(torch.max(beta.vars))
---   gfx.image(meanimgs,{zoom=3.5, legend='means'})--, min=-0.4, max=0.4})
---   gfx.image(varimgs,{zoom=3.5, legend='vars'})--, min=0.0, max=0.5})
+   gfx.image(meanimgs,{zoom=3.5, legend='means'})--, min=-0.4, max=0.4})
+   gfx.image(varimgs,{zoom=3.5, legend='vars'})--, min=0.0, max=0.5})
 --   gfx.chart(data, {
 --      chart = 'scatter', -- or: bar, stacked, multibar, scatter
 --      width = 600,
@@ -276,7 +261,7 @@ function train(dataset, type)
 --   })
 
    -- save/log current net
-   local filename = paths.concat(opt.network_name)
+   local filename = paths.concat(opt.network_name, 'network')
    os.execute('mkdir -p ' .. sys.dirname(filename))
    if paths.filep(filename) then
       os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
@@ -286,7 +271,7 @@ function train(dataset, type)
 
    -- next epoch
    epoch = epoch + 1
-    return (accuracy / B) * 100
+    return accuracy
 end
 
 -- test function
@@ -346,7 +331,7 @@ function test(dataset)
 --   print(confusion)
 --   testLogger:add{['% mean class accuracy (test set)'] = confusion.totalValid * 100}
 --   confusion:zero()
-    return (accuracy/B)*100
+    return accuracy/B
 end
 
 ----------------------------------------------------------------------
@@ -355,6 +340,7 @@ end
 while true do
    -- train/test
    local trainaccuracy = train(trainData, 'vb')
+   print("TRAINACCURACY: ", trainaccuracy)
    local testaccuracy = test(testData)
    accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy}
    -- plot errors
