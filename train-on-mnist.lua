@@ -5,6 +5,8 @@ print("HELLO WORLD")
 --require 'image'
 require 'dataset-mnist'
 require 'gfx.js'
+local _ = require ("moses")
+local inspect = require 'inspect'
 --require 'pl'
 --require 'paths'
 VBparams = require('VBparams')
@@ -12,9 +14,9 @@ VBparams = require('VBparams')
 opt = {}
 opt.threads = 8
 opt.network_to_load = ""
-opt.network_name = "sgdS1"
+opt.network_name = "new"
 opt.plot = true
-opt.learningRate = 0.1
+opt.learningRate = 0.01
 opt.batchSize = 10
 opt.momentum = 0.0
 opt.hidden = 28
@@ -28,14 +30,8 @@ torch.setnumthreads(opt.threads)
 print('<torch> set nb of threads to ' .. torch.getnumthreads())
 
 -- use floats, for SGD
-if opt.optimization == 'SGD' then
-   torch.setdefaulttensortype('torch.FloatTensor')
-end
+torch.setdefaulttensortype('torch.FloatTensor')
 
--- batch size?
-if opt.optimization == 'LBFGS' and opt.batchSize < 100 then
-   error('LBFGS should not be used with small mini-batches; 1000 is a recommended')
-end
 
 ----------------------------------------------------------------------
 -- define model to train
@@ -65,7 +61,7 @@ if opt.network_to_load == '' then
    beta = VBparams:init(parameters)
 else
    print('<trainer> reloading previously trained network')
-   local filename = paths.concat(opt.network_name, 'model')
+   local filename = paths.concat(opt.network_name, 'network')
    beta = torch.load(filename)
 end
 
@@ -181,7 +177,6 @@ function train(dataset, type)
             gradParameters:zero()
          end
          LE = LE/opt.S
-         accuracy = accuracy/opt.S
 
          -- update optimal prior alpha
          local mu_hat, var_hat = beta:compute_prior()
@@ -194,25 +189,18 @@ function train(dataset, type)
 
          avg_error = avg_error + LE
 
---         meanrpropState = {
---            stepsize = 0.001
---         }
---         varrpropState = {
---            stepsize = 0.0001
---         }
-         meansgdState = {
-            learningRate = 0.01,
-            momentum = 0.9,
-            learningRateDecay = 5e-7
-         }
-         varsgdState = {
+         meansgdState = meansgdState or {
             learningRate = 0.0001,
             momentum = 0.9,
             learningRateDecay = 5e-7
          }
+         varsgdState = varsgdState or {
+            learningRate = 0.0001,
+            momentum = 0.9
+         }
          print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
          print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
-         optim.sgd(function(_) return LD, vb_mugrads end, beta.means, meansgdState)
+         optim.sgd(function(_) return LD, vb_mugrads end, beta.means, varsdState)
          optim.sgd(function(_) return LD, vb_vargrads end, beta.vars, varsgdState)
       else
           -- evaluate function for complete mini batch
@@ -248,12 +236,16 @@ function train(dataset, type)
       table.insert(meanimgs, weights[i])
       table.insert(varimgs, vars[i])
    end
-   print(torch.min(beta.means))
-   print(torch.max(beta.means))
-   print(torch.min(beta.vars))
-   print(torch.max(beta.vars))
-   gfx.image(meanimgs,{zoom=3.5, legend='means'})--, min=-0.4, max=0.4})
-   gfx.image(varimgs,{zoom=3.5, legend='vars'})--, min=0.0, max=0.5})
+   print("beta.means:min(): ", torch.min(beta.means))
+   print("beta.means:max(): ", torch.max(beta.means))
+   print("weights:min(): ", torch.min(weights))
+   print("weights:max(): ", torch.max(weights))
+   print("beta.vars:min(): ", torch.min(beta.vars))
+   print("beta.vars:max(): ", torch.max(beta.vars))
+   print("vars:min(): ", torch.min(vars))
+   print("vars:max(): ", torch.max(vars))
+   gfx.image(meanimgs,{zoom=3.5, legend='means', min=-0.12, max=0.12, win='means', refresh=true})
+   gfx.image(varimgs,{zoom=3.5, legend='vars', min=0.022, max=0.0255, win='vars', refresh=true})
 --   gfx.chart(data, {
 --      chart = 'scatter', -- or: bar, stacked, multibar, scatter
 --      width = 600,
@@ -271,7 +263,12 @@ function train(dataset, type)
 
    -- next epoch
    epoch = epoch + 1
-    return accuracy
+   if type == 'vb' then
+       accuracy = accuracy/(B*opt.S)
+   else
+       accuracy = accuracy/B
+   end
+   return accuracy
 end
 
 -- test function
@@ -314,10 +311,6 @@ function test(dataset)
       local err = criterion:forward(preds, targets)
       avg_error = avg_error + err
 
-      -- confusion:
---      for i = 1,opt.batchSize do
---         confusion:add(preds[i], targets[i])
---      end
    end
    avg_error = avg_error / B
 
@@ -327,10 +320,6 @@ function test(dataset)
    time = time / dataset:size()
    print("<trainer> time to test 1 sample = " .. (time*1000) .. 'ms')
 
-   -- print confusion matrix
---   print(confusion)
---   testLogger:add{['% mean class accuracy (test set)'] = confusion.totalValid * 100}
---   confusion:zero()
     return accuracy/B
 end
 
