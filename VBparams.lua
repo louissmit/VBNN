@@ -11,8 +11,8 @@ require 'randomkit'
 local VBparams = {}
 torch.setdefaulttensortype('torch.FloatTensor')
 
-function VBparams:init(params)
-    self.W = params:size(1)
+function VBparams:init(W)
+    self.W = W
     self.vars = torch.Tensor(W):fill(0.005625)
     self.means = torch.Tensor(W):apply(function(_)
         return randomkit.normal(0, 0.1)
