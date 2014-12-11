@@ -12,17 +12,18 @@ local viz = require('visualize')
 --require 'pl'
 --require 'paths'
 VBparams = require('VBparams')
+require 'rmsprop'
 
 opt = {}
 opt.threads = 8
 opt.network_to_load = ""
-opt.network_name = "adagrad2"
+opt.network_name = "rmspropfull"
 opt.type = "vb"
 opt.plot = true
 opt.batchSize = 1
 opt.hidden = 10
 opt.S = 1
---opt.full = true
+opt.full = true
 -- fix seed
 --torch.manualSeed(1)
 
@@ -159,19 +160,30 @@ function train(dataset, type)
 
             avg_error = avg_error + LE
 
-            meansgdState = meansgdState or {
-                learningRate = 0.001,
-                momentum = 0.9,
-                learningRateDecay = 5e-7
-            }
+--            meansgdState = meansgdState or {
+--                learningRate = 0.00001
+--                momentum = 0.9
+--                learningRateDecay = 5e-7
+--            }
+--            varsgdState = varsgdState or {
+--                learningRate = 0.000001
+--                momentum = 0.9
+--            }
             varsgdState = varsgdState or {
-                learningRate = 0.0001,
-                momentum = 0.9
+                learningRate = 0.0000001,
+                momentumDecay = 0.1,
+                updateDecay = 0.01
             }
---            print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
+            meansgdState = meansgdState or {
+                learningRate = 0.0001,
+                momentumDecay = 0.1,
+                updateDecay = 0.01
+            }
+
+            --            print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
 --            print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
-            optim.adagrad(function(_) return LD, vb_mugrads end, beta.means, meansgdState)
-            optim.adagrad(function(_) return LD, vb_vargrads end, beta.vars, varsgdState)
+            rmsprop(function(_) return LD, vb_mugrads end, beta.means, meansgdState)
+            rmsprop(function(_) return LD, vb_vargrads end, beta.vars, varsgdState)
         else
             -- evaluate function for complete mini batch
             local outputs = model:forward(inputs)
@@ -182,13 +194,13 @@ function train(dataset, type)
             local f = criterion:forward(outputs, targets)
             accuracy = accuracy + u.get_accuracy(outputs, targets)
             avg_error = avg_error + f
-            sgdState = sgdState or {
-                learningRate = 0.1,
-                momentum = 0.0,
-                learningRateDecay = 5e-7
+            meansgdState = state or {
+                learningRate = 0.0001,
+                momentumDecay = 0.1,
+                updateDecay = 0.01
             }
 
-            optim.sgd(function(_) return f, gradParameters end, parameters, sgdState)
+            rmsprop(function(_) return f, gradParameters end, parameters, state)
         end
         --      print("batchtime: ", sys.clock() - batchtime)
 
@@ -225,6 +237,8 @@ function train(dataset, type)
     print('<trainer> saving network to '..filename)
     if type == 'vb' then
         torch.save(filename, beta)
+        torch.save(filename..'mustate', meansgdState)
+        torch.save(filename..'varstate', varsgdState)
     else
         torch.save(filename, parameters)
     end
@@ -241,12 +255,15 @@ function train(dataset, type)
 end
 
 -- test function
-function test(dataset)
+function test(dataset, type)
     local B = dataset:size()/opt.batchSize
     local accuracy = 0
     print("Testing!")
     -- local vars
     local time = sys.clock()
+    if type == 'vb' then
+        parameters:copy(beta.means)
+    end
 
     -- test over given dataset
     print('<trainer> on testing Set:')
@@ -256,10 +273,6 @@ function test(dataset)
         xlua.progress(t, dataset:size())
 
         local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, geometry)
-
-        if type == 'vb' then
-            parameters:copy(beta.means)
-        end
 
         -- test samples
         local preds = model:forward(inputs)
@@ -286,7 +299,7 @@ while true do
     -- train/test
     local trainaccuracy = train(trainData, opt.type)
     print("TRAINACCURACY: ", trainaccuracy)
-    local testaccuracy = test(testData)
+    local testaccuracy = test(testData, opt.type)
     accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy}
     -- plot errors
     if opt.plot then
