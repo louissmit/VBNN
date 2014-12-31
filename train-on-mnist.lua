@@ -1,29 +1,27 @@
 require 'nn'
 --require 'nnx'
 require 'optim'
-print("HELLO WORLD")
---require 'image'
-require 'dataset-mnist'
 require 'gfx.js'
-local _ = require ("moses")
-local inspect = require 'inspect'
+--local _ = require ("moses")
+--local inspect = require 'inspect'
 local u = require('utils')
 local viz = require('visualize')
 --require 'pl'
 --require 'paths'
 VBparams = require('VBparams')
 require 'rmsprop'
+local mnist = require('mnist')
 
 opt = {}
 opt.threads = 8
-opt.network_to_load = ""
-opt.network_name = "rmspropfull"
-opt.type = "vb"
+opt.network_to_load = "rmsprop12"
+opt.network_name = "asdf"
+opt.type = ""
 opt.plot = true
 opt.batchSize = 1
-opt.hidden = 10
+opt.hidden = {12}
 opt.S = 1
-opt.full = true
+--opt.full = true
 -- fix seed
 --torch.manualSeed(1)
 
@@ -42,17 +40,22 @@ torch.setdefaulttensortype('torch.FloatTensor')
 classes = {'0','1','2','3','4','5','6','7','8','9'}
 
 -- geometry: width and height of input images
-geometry = {32,32}
+geometry = {28,28}
+input_size = geometry[1]*geometry[2]
 
 -- define model to train
 model = nn.Sequential()
 ------------------------------------------------------------
 -- regular 2-layer MLP
 ------------------------------------------------------------
-model:add(nn.Reshape(1024))
-model:add(nn.Linear(1024, opt.hidden))
+model:add(nn.Reshape(input_size))
+model:add(nn.Linear(input_size, opt.hidden[1]))
 model:add(nn.ReLU())
-model:add(nn.Linear(opt.hidden, #classes))
+for i = 2, #opt.hidden do
+    model:add(nn.Linear(opt.hidden[i-1], opt.hidden[i]))
+    model:add(nn.ReLU())
+end
+model:add(nn.Linear(opt.hidden[#opt.hidden], #classes))
 
 -- retrieve parameters and gradients
 parameters, gradParameters = model:getParameters()
@@ -61,11 +64,14 @@ print("nr. of parameters: ", W)
 
 if opt.network_to_load == '' then
     beta = VBparams:init(W)
+
 else
    print('<trainer> reloading previously trained network')
    local filename = paths.concat(opt.network_to_load, 'network')
    beta = torch.load(filename)
 end
+print(beta.means:size(1))
+
 
 -- verbose
 print('<mnist> using model:')
@@ -89,22 +95,20 @@ else
     print('<warning> only using 2000 samples to train quickly (use flag -full to use 60000 samples)')
 end
 
--- create training set and normalize
-trainData = mnist.loadTrainSet(nbTrainingPatches, geometry)
-trainData:normalizeGlobal(mean, std)
-
--- create test set and normalize
-testData = mnist.loadTestSet(nbTestingPatches, geometry)
-testData:normalizeGlobal(mean, std)
+trainData = mnist.traindataset()
+testData = mnist.testdataset()
+trainData = {inputs=trainData.data:type('torch.FloatTensor'), targets=trainData.label}
+u.normalize(trainData.inputs)
+testData = {inputs=testData.data:type('torch.FloatTensor'), targets=testData.label}
+u.normalize(testData.inputs)
 
 ----------------------------------------------------------------------
 -- define training and testing functions
 --
 
 -- log results to files
-trainLogger = optim.Logger(paths.concat(opt.network_name, 'train.log'))
 accLogger = optim.Logger(paths.concat(opt.network_name, 'acc.log'))
-testLogger = optim.Logger(paths.concat(opt.network_name, 'test.log'))
+errorLogger = optim.Logger(paths.concat(opt.network_name, 'error.log'))
 
 
 -- training function
@@ -117,14 +121,14 @@ function train(dataset, type)
 
     -- local vars
     local time = sys.clock()
-    local B = dataset:size()/opt.batchSize
+    local B = nbTrainingPatches/opt.batchSize
 
     -- do one epoch
     print('<trainer> on training set:')
     print("<trainer> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
-    for t = 1,dataset:size(),opt.batchSize do
+    for t = 1, nbTrainingPatches,opt.batchSize do
         --      local batchtime = sys.clock()
-        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, geometry)
+        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, nbTrainingPatches, geometry)
         collectgarbage()
 
         -- reset gradients
@@ -170,7 +174,7 @@ function train(dataset, type)
 --                momentum = 0.9
 --            }
             varsgdState = varsgdState or {
-                learningRate = 0.0000001,
+                learningRate = 0.000001,
                 momentumDecay = 0.1,
                 updateDecay = 0.01
             }
@@ -205,28 +209,24 @@ function train(dataset, type)
         --      print("batchtime: ", sys.clock() - batchtime)
 
         -- disp progress
-        xlua.progress(t, dataset:size())
+        xlua.progress(t, nbTrainingPatches)
     end
 
     -- time taken
     time = sys.clock() - time
-    time = time / dataset:size()
+    time = time / nbTestingPatches
     print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
     avg_error = avg_error / B
-    trainLogger:add{['LL (train set)'] = avg_error }
     local weights, vars
     if type == 'vb' then
-        weights = torch.Tensor(W):copy(beta.means):resize(opt.hidden, 32, 32)
-        vars = torch.Tensor(W):copy(beta.vars):resize(opt.hidden, 32, 32)
         print("beta.means:min(): ", torch.min(beta.means))
         print("beta.means:max(): ", torch.max(beta.means))
         print("beta.vars:min(): ", torch.min(beta.vars))
         print("beta.vars:max(): ", torch.max(beta.vars))
     else
-        weights = torch.Tensor(W):copy(parameters):resize(opt.hidden, 32, 32)
+--        weights = torch.Tensor(W):copy(parameters):resize(opt.hidden, 32, 32)
     end
-    viz.show_parameters(weights, vars)
 
     -- save/log current net
     local filename = paths.concat(opt.network_name, 'network')
@@ -251,12 +251,12 @@ function train(dataset, type)
     else
         accuracy = accuracy/B
     end
-    return accuracy
+    return accuracy, avg_error
 end
 
 -- test function
 function test(dataset, type)
-    local B = dataset:size()/opt.batchSize
+    local B = nbTestingPatches/opt.batchSize
     local accuracy = 0
     print("Testing!")
     -- local vars
@@ -268,11 +268,11 @@ function test(dataset, type)
     -- test over given dataset
     print('<trainer> on testing Set:')
     local avg_error = 0
-    for t = 1,dataset:size(),opt.batchSize do
+    for t = 1,nbTestingPatches,opt.batchSize do
         -- disp progress
-        xlua.progress(t, dataset:size())
+        xlua.progress(t, nbTestingPatches)
 
-        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, geometry)
+        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, nbTestingPatches, geometry)
 
         -- test samples
         local preds = model:forward(inputs)
@@ -283,31 +283,33 @@ function test(dataset, type)
     end
     avg_error = avg_error / B
 
-    testLogger:add{['LL (test set)'] = avg_error}
     -- timing
     time = sys.clock() - time
-    time = time / dataset:size()
+    time = time / nbTestingPatches
     print("<trainer> time to test 1 sample = " .. (time*1000) .. 'ms')
 
-    return accuracy/B
+    return accuracy/B, avg_error
 end
 
 ----------------------------------------------------------------------
 -- and train!
 --
 while true do
+    viz.show_uncertainties(model, parameters, testData, beta.means, beta.vars, opt.hidden)
+--    viz.show_parameters(beta.means, beta.vars, opt.hidden)
+    break
     -- train/test
-    local trainaccuracy = train(trainData, opt.type)
+    local trainaccuracy, trainerror = train(trainData, opt.type)
     print("TRAINACCURACY: ", trainaccuracy)
-    local testaccuracy = test(testData, opt.type)
-    accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy}
+    local testaccuracy, testerror = test(testData, opt.type)
+    accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy }
+    errorLogger:add{['LL (train set)'] = trainerror, ['LL (test set)'] = testerror}
+
     -- plot errors
     if opt.plot then
-        trainLogger:style{['LL (train set)'] = '-'}
         accLogger:style{['% accuracy (train set)'] = '-', ['% accuracy (test set)'] = '-'}
-        testLogger:style{['LL (test set)'] = '-'}
-        trainLogger:plot()
-        testLogger:plot()
+        errorLogger:style{['LL (train set)'] = '-', ['LL (test set)'] = '-'}
         accLogger:plot()
+        errorLogger:plot()
     end
 end

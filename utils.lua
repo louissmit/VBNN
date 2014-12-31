@@ -20,21 +20,25 @@ function utils.get_accuracy(outputs, targets)
    return (correct / total)*100
 end
 
-function utils.create_minibatch(dataset, index, batchSize, geometry)
+function utils.create_minibatch(dataset, index, batchSize, n, geometry)
    local inputs = torch.Tensor(batchSize,1,geometry[1],geometry[2])
    local targets = torch.Tensor(batchSize)
    local k = 1
-   for i = index, math.min(index+batchSize-1,dataset:size()) do
+   for i = index, math.min(index+batchSize-1, n) do
       -- load new sample
-      local sample = dataset[i]
-      local input = sample[1]:clone()
-      local _,target = sample[2]:clone():max(1)
-      target = target:squeeze()
-      inputs[k] = input
-      targets[k] = target
+      inputs[k] = dataset.inputs:select(1,i)
+      targets[k] = dataset.targets[i]+1
       k = k + 1
    end
    return inputs, targets
+end
+
+function utils.normalize(data)
+   local std = data:std()
+   local mean = data:mean()
+   data:add(-mean)
+   data:mul(1/std)
+   return mean, std
 end
 
 return utils
