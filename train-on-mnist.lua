@@ -9,14 +9,15 @@ local viz = require('visualize')
 --require 'pl'
 --require 'paths'
 VBparams = require('VBparams')
+VBSSparams = require('VBSSparams')
 require 'rmsprop'
 local mnist = require('mnist')
 
 opt = {}
 opt.threads = 8
-opt.network_to_load = "rmsprop12"
-opt.network_name = "asdf"
-opt.type = ""
+opt.network_to_load = ""
+opt.network_name = "asdf2"
+opt.type = "ssvb"
 opt.plot = true
 opt.batchSize = 1
 opt.hidden = {12}
@@ -24,6 +25,18 @@ opt.S = 1
 --opt.full = true
 -- fix seed
 --torch.manualSeed(1)
+
+-- optimisation params
+opt.varState = {
+    learningRate = 0.000001,
+    momentumDecay = 0.1,
+    updateDecay = 0.01
+}
+opt.meanState = {
+    learningRate = 0.0001,
+    momentumDecay = 0.1,
+    updateDecay = 0.01
+}
 
 -- threads
 torch.setnumthreads(opt.threads)
@@ -63,15 +76,16 @@ W = parameters:size(1)
 print("nr. of parameters: ", W)
 
 if opt.network_to_load == '' then
-    beta = VBparams:init(W)
-
+    if opt.type == 'vb' then
+        beta = VBparams:init(W, opt)
+    else
+        beta = VBSSparams:init(W, opt)
+    end
 else
    print('<trainer> reloading previously trained network')
    local filename = paths.concat(opt.network_to_load, 'network')
    beta = torch.load(filename)
 end
-print(beta.means:size(1))
-
 
 -- verbose
 print('<mnist> using model:')
@@ -121,7 +135,7 @@ function train(dataset, type)
 
     -- local vars
     local time = sys.clock()
-    local B = nbTrainingPatches/opt.batchSize
+    opt.B = nbTrainingPatches/opt.batchSize
 
     -- do one epoch
     print('<trainer> on training set:')
@@ -136,58 +150,11 @@ function train(dataset, type)
 
         if type == 'vb' then
             -- sample W
-            local LN_squared = torch.Tensor(W):zero()
-            local gradsum = torch.Tensor(W):zero()
-            local outputs
-            local LE = 0
-            for i = 1, opt.S do
-                parameters:copy(beta:sampleW())
-                outputs = model:forward(inputs)
-                accuracy = accuracy + u.get_accuracy(outputs, targets)
-                local df_do = criterion:backward(outputs, targets)
-                model:backward(inputs, df_do)
-                LE = LE + criterion:forward(outputs, targets)
-                LN_squared:add(torch.pow(gradParameters, 2))
-                gradsum:add(gradParameters)
-                gradParameters:zero()
-            end
-            LE = LE/opt.S
-
-            -- update optimal prior alpha
-            local mu_hat, var_hat = beta:compute_prior()
-            local vb_mugrads, mlcg = beta:compute_mugrads(gradsum, B, opt.S)
-
-            local vb_vargrads, vlcg = beta:compute_vargrads(LN_squared, B, opt.S)
-
-            local LC = beta:calc_LC(B)
-            local LD = LE + torch.sum(LC)
-
-            avg_error = avg_error + LE
-
---            meansgdState = meansgdState or {
---                learningRate = 0.00001
---                momentum = 0.9
---                learningRateDecay = 5e-7
---            }
---            varsgdState = varsgdState or {
---                learningRate = 0.000001
---                momentum = 0.9
---            }
-            varsgdState = varsgdState or {
-                learningRate = 0.000001,
-                momentumDecay = 0.1,
-                updateDecay = 0.01
-            }
-            meansgdState = meansgdState or {
-                learningRate = 0.0001,
-                momentumDecay = 0.1,
-                updateDecay = 0.01
-            }
-
-            --            print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
---            print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
-            rmsprop(function(_) return LD, vb_mugrads end, beta.means, meansgdState)
-            rmsprop(function(_) return LD, vb_vargrads end, beta.vars, varsgdState)
+            local error, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
+            accuracy = accuracy + acc
+            avg_error = avg_error + error
+        elseif type == 'ssvb' then
+            local error, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
         else
             -- evaluate function for complete mini batch
             local outputs = model:forward(inputs)
@@ -217,7 +184,7 @@ function train(dataset, type)
     time = time / nbTestingPatches
     print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
-    avg_error = avg_error / B
+    avg_error = avg_error / opt.B
     local weights, vars
     if type == 'vb' then
         print("beta.means:min(): ", torch.min(beta.means))
@@ -237,8 +204,6 @@ function train(dataset, type)
     print('<trainer> saving network to '..filename)
     if type == 'vb' then
         torch.save(filename, beta)
-        torch.save(filename..'mustate', meansgdState)
-        torch.save(filename..'varstate', varsgdState)
     else
         torch.save(filename, parameters)
     end
@@ -247,9 +212,9 @@ function train(dataset, type)
     -- next epoch
     epoch = epoch + 1
     if type == 'vb' then
-        accuracy = accuracy/(B*opt.S)
+        accuracy = accuracy/(opt.B*opt.S)
     else
-        accuracy = accuracy/B
+        accuracy = accuracy/opt.B
     end
     return accuracy, avg_error
 end
@@ -295,9 +260,9 @@ end
 -- and train!
 --
 while true do
-    viz.show_uncertainties(model, parameters, testData, beta.means, beta.vars, opt.hidden)
+--    viz.show_uncertainties(model, parameters, testData, beta.means, beta.vars, opt.hidden)
 --    viz.show_parameters(beta.means, beta.vars, opt.hidden)
-    break
+--    break
     -- train/test
     local trainaccuracy, trainerror = train(trainData, opt.type)
     print("TRAINACCURACY: ", trainaccuracy)

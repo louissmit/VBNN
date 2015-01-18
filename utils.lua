@@ -41,4 +41,16 @@ function utils.normalize(data)
    return mean, std
 end
 
+function utils.num_grad(to_check, func)
+    local epsilon = 2*torch.sqrt(1e-12)*(1+torch.norm(to_check))
+    print(epsilon)
+    to_check:add(epsilon)
+    local F1 = func()
+    to_check:add(-2*epsilon)
+    local F2 = func()
+    to_check:add(epsilon)
+    local numgrad = torch.add(F1, -F2):mul(1 / (2*epsilon))
+    return numgrad
+end
+
 return utils
