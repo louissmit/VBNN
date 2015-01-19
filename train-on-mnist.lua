@@ -24,7 +24,7 @@ opt.hidden = {12}
 opt.S = 1
 --opt.full = true
 -- fix seed
---torch.manualSeed(1)
+torch.manualSeed(1)
 
 -- optimisation params
 opt.varState = {
@@ -165,7 +165,7 @@ function train(dataset, type)
             local f = criterion:forward(outputs, targets)
             accuracy = accuracy + u.get_accuracy(outputs, targets)
             avg_error = avg_error + f
-            meansgdState = state or {
+            state = state or {
                 learningRate = 0.0001,
                 momentumDecay = 0.1,
                 updateDecay = 0.01
@@ -189,8 +189,8 @@ function train(dataset, type)
     if type == 'vb' then
         print("beta.means:min(): ", torch.min(beta.means))
         print("beta.means:max(): ", torch.max(beta.means))
-        print("beta.vars:min(): ", torch.min(beta.vars))
-        print("beta.vars:max(): ", torch.max(beta.vars))
+        print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+        print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
     else
 --        weights = torch.Tensor(W):copy(parameters):resize(opt.hidden, 32, 32)
     end

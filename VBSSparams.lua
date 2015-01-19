@@ -17,7 +17,10 @@ torch.setdefaulttensortype('torch.FloatTensor')
 
 function VBSSparams:init(W)
     self.W = W
-    self.vars = torch.Tensor(W):fill(0.005625)
+--    self.lvars = torch.Tensor(W):fill(-4)
+    self.lvars = torch.Tensor(W):apply(function(_)
+        return randomkit.uniform(-10, 0)
+    end)
     self.means = torch.Tensor(W):apply(function(_)
         return randomkit.normal(0, 0.1)
     end)
@@ -46,10 +49,11 @@ function VBSSparams:sampleTheta()
 end
 
 function VBSSparams:compute_prior()
---    self.mu_hat = (1/self.W)*torch.sum(self.means)
+    local vars = torch.exp(self.lvars)
+--    self.mu_hat = (1/self.W)*torch.sum(self.means) -- comment out for grad check
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
-    self.var_hat = (1/W)*torch.sum(torch.add(self.vars, self.mu_sqe))
+    self.var_hat = (1/self.W)*torch.sum(torch.add(vars, self.mu_sqe))
     self.pi_hat = (1/self.W)*torch.sum(nn.Sigmoid():forward(self.p))
     print('p_hat', self.pi_hat)
     return self.mu_hat, self.var_hat
@@ -61,8 +65,9 @@ function VBSSparams:compute_mugrads(gradsum, opt)
 end
 
 function VBSSparams:compute_vargrads(LN_squared, opt)
-    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):mul(1/opt.B)
-    return torch.add(lcg, LN_squared:mul(1/opt.S)):mul(1/2), lcg
+    local vars = torch.exp(self.lvars)
+    local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):mul(1/opt.B)
+    return torch.add(lcg, LN_squared:mul(1/opt.S)):mul(1/2):cmul(vars), lcg:mul(1/2):cmul(vars)
 end
 
 function VBSSparams:compute_pgrads(opt)
@@ -76,14 +81,15 @@ function VBSSparams:compute_pgrads(opt)
 end
 
 function VBSSparams:calc_LC(B)
-    local LCfirst = torch.add(-torch.log(torch.sqrt(self.vars)), torch.log(torch.sqrt(self.var_hat)))
-    local LCsecond = torch.add(self.mu_sqe, torch.add(self.vars, -self.var_hat)):mul(1/(2*self.var_hat))
+    local vars = torch.exp(self.lvars)
+    local LCfirst = torch.add(-torch.log(torch.sqrt(vars)), torch.log(torch.sqrt(self.var_hat)))
+    local LCsecond = torch.add(self.mu_sqe, torch.add(vars, -self.var_hat)):mul(1/(2*self.var_hat))
 
     local pi = nn.Sigmoid():forward(self.p)
     local minpi = torch.add(-pi, 1)
     local LCthird = torch.add(torch.cmul(minpi, torch.log(minpi)), torch.cmul(pi, torch.log(pi)))
     LCthird:add(torch.add(torch.mul(minpi, torch.log(1-self.pi_hat)), torch.mul(pi, torch.log(self.pi_hat))))
-    return torch.add(LCfirst, LCsecond, LCthird):mul(1/B)
+    return torch.add(LCfirst, torch.add(LCsecond, LCthird)):mul(1/B)
 end
 
 function VBSSparams:check_pgrads(opt)
@@ -100,6 +106,11 @@ function VBSSparams:check_mugrads(gradsum, opt)
     return lc_grad, numgrad
 end
 
+function VBSSparams:check_vargrads(LN_squared, opt)
+    local numgrad = u.num_grad(self.lvars, function() return self:calc_LC(opt.B) end)
+    local gle, glc = self:compute_vargrads(LN_squared, opt)
+    return glc, numgrad
+end
 
 function VBSSparams:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
     local LN_squared = torch.Tensor(self.W):zero()
@@ -136,23 +147,17 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     print('minmugradcheck: ', torch.min(grad), torch.min(numgrad))
     print('maxmugradcheck: ', torch.max(grad), torch.max(numgrad))
     print('mugradcheck: ', torch.max(torch.add(grad, -numgrad)))
+    local grad, numgrad = self:check_vargrads(LN_squared, opt)
+    print('minvargradcheck: ', torch.min(grad), torch.min(numgrad))
+    print('maxvargradcheck: ', torch.max(grad), torch.max(numgrad))
+    print('vargradcheck: ', torch.max(torch.abs(torch.add(grad, -numgrad))))
     exit()
     local LD = LE + torch.sum(LC)
 
-    varsgdState = varsgdState or {
-        learningRate = 0.000001,
-        momentumDecay = 0.1,
-        updateDecay = 0.01
-    }
-    meansgdState = meansgdState or {
-        learningRate = 0.0001,
-        momentumDecay = 0.1,
-        updateDecay = 0.01
-    }
     --            print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
     --            print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
-    rmsprop(function(_) return LD, vb_mugrads end, self.means, meansgdState)
-    rmsprop(function(_) return LD, vb_vargrads end, self.vars, varsgdState)
+    rmsprop(function(_) return LD, vb_mugrads end, self.means, self.meanState)
+    rmsprop(function(_) return LD, vb_vargrads end, self.lvars, self.varState)
     return LE, accuracy
 end
 
