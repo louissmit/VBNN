@@ -43,14 +43,18 @@ end
 
 function utils.num_grad(to_check, func)
     local epsilon = 2*torch.sqrt(1e-12)*(1+torch.norm(to_check))
-    print(epsilon)
+    print("epsilon: ", epsilon)
     to_check:add(epsilon)
     local F1 = func()
+    print("F1: ", torch.min(F1), torch.max(F1))
     to_check:add(-2*epsilon)
     local F2 = func()
+    print("F2: ", torch.min(F2), torch.max(F2))
     to_check:add(epsilon)
     local numgrad = torch.add(F1, -F2):mul(1 / (2*epsilon))
     return numgrad
 end
+
+function utils.isnan(x) return x ~= x end
 
 return utils

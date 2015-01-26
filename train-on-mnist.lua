@@ -11,31 +11,41 @@ local viz = require('visualize')
 VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
 require 'rmsprop'
+require 'adam'
 local mnist = require('mnist')
 
 opt = {}
 opt.threads = 8
-opt.network_to_load = ""
-opt.network_name = "asdf2"
+opt.network_to_load = "learningtodropconnect2"
+opt.network_name = "asdf"
 opt.type = "ssvb"
+opt.trainSize = 1000
+opt.testSize = 500
 opt.plot = true
-opt.batchSize = 1
+opt.batchSize = 100
+opt.B = (opt.trainSize/opt.batchSize)*1000
 opt.hidden = {12}
-opt.S = 1
---opt.full = true
+opt.S = 20
+opt.c = 0.5
+opt.normcheck = true
 -- fix seed
 torch.manualSeed(1)
 
 -- optimisation params
 opt.varState = {
-    learningRate = 0.000001,
+    learningRate = 0.00001,
     momentumDecay = 0.1,
-    updateDecay = 0.01
+    updateDecay = 0.9
 }
 opt.meanState = {
-    learningRate = 0.0001,
+    learningRate = 0.000001,
     momentumDecay = 0.1,
-    updateDecay = 0.01
+    updateDecay = 0.9
+}
+opt.piState = {
+    learningRate = 0.00001,
+    momentumDecay = 0.1,
+    updateDecay = 0.9
 }
 
 -- threads
@@ -54,7 +64,7 @@ classes = {'0','1','2','3','4','5','6','7','8','9'}
 
 -- geometry: width and height of input images
 geometry = {28,28}
-input_size = geometry[1]*geometry[2]
+local input_size = geometry[1]*geometry[2]
 
 -- define model to train
 model = nn.Sequential()
@@ -98,16 +108,8 @@ model:add(nn.LogSoftMax())
 criterion = nn.ClassNLLCriterion()
 
 ----------------------------------------------------------------------
--- get/create dataset
+-- preprocess dataset
 --
-if opt.full then
-    nbTrainingPatches = 60000
-    nbTestingPatches = 10000
-else
-    nbTrainingPatches = 2000
-    nbTestingPatches = 1000
-    print('<warning> only using 2000 samples to train quickly (use flag -full to use 60000 samples)')
-end
 
 trainData = mnist.traindataset()
 testData = mnist.testdataset()
@@ -120,9 +122,7 @@ u.normalize(testData.inputs)
 -- define training and testing functions
 --
 
--- log results to files
-accLogger = optim.Logger(paths.concat(opt.network_name, 'acc.log'))
-errorLogger = optim.Logger(paths.concat(opt.network_name, 'error.log'))
+
 
 
 -- training function
@@ -130,19 +130,20 @@ function train(dataset, type)
     print("Training!")
     -- epoch tracker
     epoch = epoch or 1
+    local B = opt.trainSize/opt.batchSize
     local accuracy = 0
-    local avg_error = 0
+    local avg_lc = 0
+    local avg_le = 0
 
     -- local vars
     local time = sys.clock()
-    opt.B = nbTrainingPatches/opt.batchSize
 
     -- do one epoch
     print('<trainer> on training set:')
     print("<trainer> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
-    for t = 1, nbTrainingPatches,opt.batchSize do
+    for t = 1, opt.trainSize,opt.batchSize do
         --      local batchtime = sys.clock()
-        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, nbTrainingPatches, geometry)
+        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, opt.trainSize, geometry)
         collectgarbage()
 
         -- reset gradients
@@ -150,11 +151,15 @@ function train(dataset, type)
 
         if type == 'vb' then
             -- sample W
-            local error, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
+            local lc, le, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
-            avg_error = avg_error + error
+            avg_lc = avg_lc + lc
+            avg_le = avg_le + le
         elseif type == 'ssvb' then
-            local error, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
+            local le, lc, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
+            accuracy = accuracy + acc
+            avg_lc = avg_lc + lc
+            avg_le = avg_le + le
         else
             -- evaluate function for complete mini batch
             local outputs = model:forward(inputs)
@@ -176,24 +181,24 @@ function train(dataset, type)
         --      print("batchtime: ", sys.clock() - batchtime)
 
         -- disp progress
-        xlua.progress(t, nbTrainingPatches)
+        xlua.progress(t, opt.trainSize)
     end
 
     -- time taken
     time = sys.clock() - time
-    time = time / nbTestingPatches
+    time = time / opt.testSize
     print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
-    avg_error = avg_error / opt.B
-    local weights, vars
-    if type == 'vb' then
-        print("beta.means:min(): ", torch.min(beta.means))
-        print("beta.means:max(): ", torch.max(beta.means))
-        print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-        print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
-    else
---        weights = torch.Tensor(W):copy(parameters):resize(opt.hidden, 32, 32)
+    print("beta.means:min(): ", torch.min(beta.means))
+    print("beta.means:max(): ", torch.max(beta.means))
+    print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+    print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
+    if type == 'ssvb' then
+    print("beta.pi:min(): ", torch.min(beta.pi))
+    print("beta.pi:max(): ", torch.max(beta.pi))
+    print("beta.pi:avg(): ", torch.mean(beta.pi))
     end
+--        weights = torch.Tensor(W):copy(parameters):resize(opt.hidden, 32, 32)
 
     -- save/log current net
     local filename = paths.concat(opt.network_name, 'network')
@@ -202,7 +207,7 @@ function train(dataset, type)
         os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
     end
     print('<trainer> saving network to '..filename)
-    if type == 'vb' then
+    if type == 'vb' or type == 'ssvb' then
         torch.save(filename, beta)
     else
         torch.save(filename, parameters)
@@ -211,33 +216,39 @@ function train(dataset, type)
 
     -- next epoch
     epoch = epoch + 1
-    if type == 'vb' then
-        accuracy = accuracy/(opt.B*opt.S)
+    if type == 'vb' or type == 'ssvb' then
+        accuracy = accuracy/B
+        avg_le = avg_le /B
+        avg_lc = avg_lc /B
     else
-        accuracy = accuracy/opt.B
+        accuracy = accuracy/B
     end
-    return accuracy, avg_error
+    return accuracy, avg_lc, avg_le
 end
 
 -- test function
 function test(dataset, type)
-    local B = nbTestingPatches/opt.batchSize
+    local B = opt.testSize/opt.batchSize
     local accuracy = 0
+    local mu_acc = 0
+    local avg_error = 0
     print("Testing!")
     -- local vars
     local time = sys.clock()
     if type == 'vb' then
         parameters:copy(beta.means)
+    elseif type == 'ssvb' then
+--        parameters:copy(torch.cmul(beta.means, beta.pi))
+        parameters:copy(torch.cmul(beta.means, torch.pow(beta.pi,2):cmul(torch.pow(beta.vars, -1))))
     end
 
     -- test over given dataset
     print('<trainer> on testing Set:')
-    local avg_error = 0
-    for t = 1,nbTestingPatches,opt.batchSize do
+    for t = 1,opt.testSize,opt.batchSize do
         -- disp progress
-        xlua.progress(t, nbTestingPatches)
+        xlua.progress(t, opt.testSize)
 
-        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, nbTestingPatches, geometry)
+        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, opt.testSize, geometry)
 
         -- test samples
         local preds = model:forward(inputs)
@@ -250,31 +261,51 @@ function test(dataset, type)
 
     -- timing
     time = sys.clock() - time
-    time = time / nbTestingPatches
+    time = time / opt.testSize
     print("<trainer> time to test 1 sample = " .. (time*1000) .. 'ms')
 
-    return accuracy/B, avg_error
+    return accuracy/B, avg_error/B
 end
 
 ----------------------------------------------------------------------
 -- and train!
 --
+-- log results to files
+accLogger = optim.Logger(paths.concat(opt.network_name, 'acc.log'))
+errorLogger = optim.Logger(paths.concat(opt.network_name, 'error.log'))
+leLogger = optim.Logger(paths.concat(opt.network_name, 'le.log'))
+lcLogger = optim.Logger(paths.concat(opt.network_name, 'lc.log'))
+nrlogger = optim.Logger(paths.concat(opt.network_name, 'nr.log'))
+
+accuracies = {}
 while true do
 --    viz.show_uncertainties(model, parameters, testData, beta.means, beta.vars, opt.hidden)
---    viz.show_parameters(beta.means, beta.vars, opt.hidden)
 --    break
     -- train/test
-    local trainaccuracy, trainerror = train(trainData, opt.type)
-    print("TRAINACCURACY: ", trainaccuracy)
+viz.show_parameters(beta.means, beta.lvars, beta.p, opt.hidden)
+--    local trainaccuracy, lccc, leee = train(trainData, opt.type)
+--    table.insert(accuracies, trainaccuracy)
+--    print("TRAINACCURACY: ", trainaccuracy, trainerror)
     local testaccuracy, testerror = test(testData, opt.type)
+    print("TESTACCURACY: ", testaccuracy, testerror)
+exit()
+
+--    viz.graph_things(accuracies)
     accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy }
-    errorLogger:add{['LL (train set)'] = trainerror, ['LL (test set)'] = testerror}
+--    errorLogger:add{['LL (train set)'] = lccc+leee, ['LL (test set)'] = testerror }
+    leLogger:add({['LE'] = leee})
+    lcLogger:add({['LC'] = lccc})
+
 
     -- plot errors
     if opt.plot then
         accLogger:style{['% accuracy (train set)'] = '-', ['% accuracy (test set)'] = '-'}
         errorLogger:style{['LL (train set)'] = '-', ['LL (test set)'] = '-'}
+        leLogger:style({['LE'] = '-'})
+        lcLogger:style({['LC'] = '-'})
         accLogger:plot()
-        errorLogger:plot()
+--        errorLogger:plot()
+        leLogger:plot()
+        lcLogger:plot()
     end
 end

@@ -19,30 +19,43 @@ function split(string)
     return res
 end
 
-function viz.show_parameters(weights, vars, hidden)
-
+function viz.show_parameters(weights, lvars, p, hidden)
     local weights = torch.Tensor(W):copy(weights):resize(hidden[1], 28, 28)
-    local vars = torch.Tensor(W):copy(vars):resize(hidden[1], 28, 28)
+    local vars = torch.Tensor(W):copy(torch.exp(lvars)):resize(hidden[1], 28, 28)
+    local pi = false
+    if p then
+        pi = torch.Tensor(W):copy(nn.Sigmoid():forward(p)):resize(hidden[1], 28, 28)
+    end
 
     local meanimgs = {}
     local varimgs = {}
+    local piimgs = {}
     for i = 1, hidden[1] do
         table.insert(meanimgs, weights[i])
         if vars then
             table.insert(varimgs, vars[i])
+        end
+        if pi then
+            table.insert(piimgs, pi[i])
         end
     end
 
     print("weights:min(): ", torch.min(weights))
     print("weights:max(): ", torch.max(weights))
 
-
-    gfx.image(meanimgs,{zoom=3.5, legend='means', min=-0.36, max=0.30, win='means', refresh=true})
+--    gfx.image(meanimgs,{zoom=3.5, legend='means', min=-0.8, max=0.8, win='means', refresh=true})
+    gfx.image(meanimgs,{zoom=3.5, legend='means',  win='means', refresh=true})
     if vars then
-        gfx.image(varimgs,{zoom=3.5, legend='vars', min=0.008, max=0.0255, win='vars', refresh=true})
+--        gfx.image(varimgs,{zoom=3.5, legend='vars', min=0.0, max=0.04, win='vars', refresh=true})
+        gfx.image(varimgs,{zoom=3.5, legend='vars', win='vars', refresh=true})
+    end
+    if pi then
+--        gfx.image(piimgs,{zoom=3.5, legend='pi', min=0.0, max=1.0, win='pi', refresh=true})
+        gfx.image(piimgs,{zoom=3.5, legend='pi', win='pi', refresh=true})
+    end
+
         print("vars:min(): ", torch.min(vars))
         print("vars:max(): ", torch.max(vars))
-    end
 
     --   gfx.chart(data, {
     --      chart = 'scatter', -- or: bar, stacked, multibar, scatter
@@ -85,6 +98,25 @@ function viz.show_uncertainties(model, parameters, testData, means, vars, hidden
         viz.show_uncertainty(model:get(2).output, input, means, vars, hidden[1], label)
     end
 
+end
+
+function viz.graph_things(data)
+    local values = {}
+    for k, v in pairs(data) do
+        table.insert(values, {k,v})
+    end
+
+    local data = {
+        key = 'Legend',
+        values = values
+    }
+    gfx.chart(data, {
+        chart = 'line', -- or: bar, stacked, multibar, scatter
+        width = 600,
+        height = 450,
+        win = 'chart',
+        refresh= true,
+    })
 end
 
 --file = io.open('logs/logs/test.log', "r")
