@@ -57,4 +57,8 @@ end
 
 function utils.isnan(x) return x ~= x end
 
+function utils.norm_pdf(x, mu, sigma)
+    return torch.exp(-.5 * (x-mu)*(x-mu)/(sigma*sigma)) / torch.sqrt(2.0*math.pi*sigma*sigma)
+end
+
 return utils

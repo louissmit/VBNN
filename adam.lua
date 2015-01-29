@@ -26,7 +26,7 @@ function adam(opfunc, x, config, state)
     -- get parameters
     local config = config or {}
     local state = state or config
-    local lr = config.learningRate or 2e-3
+    local lr = config.learningRate or 2e-6
     local gamma = config.updateDecay or 0.9
     local beta = config.momentumDecay or 1
 

@@ -3,47 +3,52 @@ require 'nn'
 require 'optim'
 require 'gfx.js'
 --local _ = require ("moses")
---local inspect = require 'inspect'
+local inspect = require 'inspect'
 local u = require('utils')
 local viz = require('visualize')
 --require 'pl'
 --require 'paths'
+NNparams = require('NNparams')
 VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
 require 'rmsprop'
 require 'adam'
+--require 'cutorch'
+--torch.setdefaulttensortype('torch.CudaTensor')
+--print(  cutorch.getDeviceProperties(cutorch.getDevice()) )
+torch.setdefaulttensortype('torch.FloatTensor')
 local mnist = require('mnist')
 
 opt = {}
 opt.threads = 8
-opt.network_to_load = "learningtodropconnect2"
-opt.network_name = "asdf"
+opt.network_to_load = ""
+opt.network_name = "picorrection"
 opt.type = "ssvb"
-opt.trainSize = 1000
-opt.testSize = 500
+opt.trainSize = 600
+opt.testSize = 100
 opt.plot = true
-opt.batchSize = 100
-opt.B = (opt.trainSize/opt.batchSize)*1000
+opt.batchSize = 10
+opt.B = (opt.trainSize/opt.batchSize)--*1000
 opt.hidden = {12}
-opt.S = 20
-opt.c = 0.5
+opt.S = 10
+opt.alpha = 0.9 -- NVIL
 opt.normcheck = true
 -- fix seed
 torch.manualSeed(1)
 
 -- optimisation params
 opt.varState = {
-    learningRate = 0.00001,
+    learningRate = 0.0000001,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
 opt.meanState = {
-    learningRate = 0.000001,
+    learningRate = 0.00000001,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
 opt.piState = {
-    learningRate = 0.00001,
+    learningRate = 0.00000000001,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -52,8 +57,6 @@ opt.piState = {
 torch.setnumthreads(opt.threads)
 print('<torch> set nb of threads to ' .. torch.getnumthreads())
 
--- use floats, for SGD
-torch.setdefaulttensortype('torch.FloatTensor')
 
 
 ----------------------------------------------------------------------
@@ -71,7 +74,7 @@ model = nn.Sequential()
 ------------------------------------------------------------
 -- regular 2-layer MLP
 ------------------------------------------------------------
-model:add(nn.Reshape(input_size))
+model:add(nn.View(input_size))
 model:add(nn.Linear(input_size, opt.hidden[1]))
 model:add(nn.ReLU())
 for i = 2, #opt.hidden do
@@ -88,8 +91,10 @@ print("nr. of parameters: ", W)
 if opt.network_to_load == '' then
     if opt.type == 'vb' then
         beta = VBparams:init(W, opt)
-    else
+    elseif opt.type == 'ssvb' then
         beta = VBSSparams:init(W, opt)
+    else
+        beta = NNparams:init(W, opt)
     end
 else
    print('<trainer> reloading previously trained network')
@@ -123,8 +128,6 @@ u.normalize(testData.inputs)
 --
 
 
-
-
 -- training function
 function train(dataset, type)
     print("Training!")
@@ -132,6 +135,7 @@ function train(dataset, type)
     epoch = epoch or 1
     local B = opt.trainSize/opt.batchSize
     local accuracy = 0
+    local error = 0
     local avg_lc = 0
     local avg_le = 0
 
@@ -161,22 +165,9 @@ function train(dataset, type)
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
         else
-            -- evaluate function for complete mini batch
-            local outputs = model:forward(inputs)
-
-            -- estimate df/dW
-            local df_do = criterion:backward(outputs, targets)
-            model:backward(inputs, df_do)
-            local f = criterion:forward(outputs, targets)
-            accuracy = accuracy + u.get_accuracy(outputs, targets)
-            avg_error = avg_error + f
-            state = state or {
-                learningRate = 0.0001,
-                momentumDecay = 0.1,
-                updateDecay = 0.01
-            }
-
-            rmsprop(function(_) return f, gradParameters end, parameters, state)
+            local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
+            error = error + err
+            accuracy = accuracy + acc
         end
         --      print("batchtime: ", sys.clock() - batchtime)
 
@@ -189,16 +180,16 @@ function train(dataset, type)
     time = time / opt.testSize
     print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
-    print("beta.means:min(): ", torch.min(beta.means))
-    print("beta.means:max(): ", torch.max(beta.means))
-    print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-    print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
-    if type == 'ssvb' then
-    print("beta.pi:min(): ", torch.min(beta.pi))
-    print("beta.pi:max(): ", torch.max(beta.pi))
-    print("beta.pi:avg(): ", torch.mean(beta.pi))
+    if type == 'vb' then
+        print("beta.means:min(): ", torch.min(beta.means))
+        print("beta.means:max(): ", torch.max(beta.means))
+        print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+        print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
+    elseif type == 'ssvb' then
+        print("beta.pi:min(): ", torch.min(beta.pi))
+        print("beta.pi:max(): ", torch.max(beta.pi))
+        print("beta.pi:avg(): ", torch.mean(beta.pi))
     end
---        weights = torch.Tensor(W):copy(parameters):resize(opt.hidden, 32, 32)
 
     -- save/log current net
     local filename = paths.concat(opt.network_name, 'network')
@@ -213,17 +204,18 @@ function train(dataset, type)
         torch.save(filename, parameters)
     end
 
-
     -- next epoch
     epoch = epoch + 1
     if type == 'vb' or type == 'ssvb' then
         accuracy = accuracy/B
         avg_le = avg_le /B
         avg_lc = avg_lc /B
+        error = avg_le + avg_lc
     else
         accuracy = accuracy/B
+        error = error/B
     end
-    return accuracy, avg_lc, avg_le
+    return accuracy, error, avg_lc, avg_le
 end
 
 -- test function
@@ -239,6 +231,14 @@ function test(dataset, type)
         parameters:copy(beta.means)
     elseif type == 'ssvb' then
 --        parameters:copy(torch.cmul(beta.means, beta.pi))
+--    local evalm = torch.Tensor(W):map2(beta.means, beta.vars, function(_, mu, var)
+--        return u.norm_pdf(mu,mu,var)
+--    end)
+--    local evalz = torch.Tensor(W):map2(beta.means, beta.vars, function(_, mu, var)
+--        return u.norm_pdf(0,mu,var)
+--    end)
+--print(evalm)
+--        parameters:copy(torch.max(evalm, evalz))
         parameters:copy(torch.cmul(beta.means, torch.pow(beta.pi,2):cmul(torch.pow(beta.vars, -1))))
     end
 
@@ -257,7 +257,6 @@ function test(dataset, type)
         avg_error = avg_error + err
 
     end
-    avg_error = avg_error / B
 
     -- timing
     time = sys.clock() - time
@@ -277,35 +276,38 @@ leLogger = optim.Logger(paths.concat(opt.network_name, 'le.log'))
 lcLogger = optim.Logger(paths.concat(opt.network_name, 'lc.log'))
 nrlogger = optim.Logger(paths.concat(opt.network_name, 'nr.log'))
 
-accuracies = {}
 while true do
 --    viz.show_uncertainties(model, parameters, testData, beta.means, beta.vars, opt.hidden)
 --    break
     -- train/test
-viz.show_parameters(beta.means, beta.lvars, beta.p, opt.hidden)
+--viz.show_parameters(beta.means, beta.lvars, beta.p, opt.hidden)
+    local trainaccuracy, trainerror, lc, le = train(trainData, opt.type)
 --    local trainaccuracy, lccc, leee = train(trainData, opt.type)
---    table.insert(accuracies, trainaccuracy)
---    print("TRAINACCURACY: ", trainaccuracy, trainerror)
+    print("TRAINACCURACY: ", trainaccuracy, trainerror)
     local testaccuracy, testerror = test(testData, opt.type)
     print("TESTACCURACY: ", testaccuracy, testerror)
-exit()
 
 --    viz.graph_things(accuracies)
     accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy }
---    errorLogger:add{['LL (train set)'] = lccc+leee, ['LL (test set)'] = testerror }
-    leLogger:add({['LE'] = leee})
-    lcLogger:add({['LC'] = lccc})
+    errorLogger:add{['LL (train set)'] = trainerror, ['LL (test set)'] = testerror }
+    if opt.type == 'ssvb' then
+        leLogger:add({['LE'] = le})
+        lcLogger:add({['LC'] = lc})
+    end
 
 
     -- plot errors
     if opt.plot then
         accLogger:style{['% accuracy (train set)'] = '-', ['% accuracy (test set)'] = '-'}
-        errorLogger:style{['LL (train set)'] = '-', ['LL (test set)'] = '-'}
-        leLogger:style({['LE'] = '-'})
-        lcLogger:style({['LC'] = '-'})
+        errorLogger:style{['LL (train set)'] = '-', ['LL (test set)'] = '-' }
+        if opt.type == 'ssvb' then
+            leLogger:style({['LE'] = '-'})
+            lcLogger:style({['LC'] = '-'})
+            leLogger:plot()
+            lcLogger:plot()
+        end
         accLogger:plot()
---        errorLogger:plot()
-        leLogger:plot()
-        lcLogger:plot()
+        errorLogger:plot()
+
     end
 end
