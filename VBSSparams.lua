@@ -13,7 +13,6 @@ local inspect = require 'inspect'
 
 
 local VBSSparams = {}
-torch.setdefaulttensortype('torch.FloatTensor')
 
 function VBSSparams:init(W)
     self.W = W

@@ -1,4 +1,4 @@
-require 'nn'
+--require 'nn'
 --require 'nnx'
 require 'optim'
 require 'gfx.js'
@@ -11,11 +11,12 @@ local viz = require('visualize')
 NNparams = require('NNparams')
 VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
-require 'rmsprop'
+--require 'rmsprop'
 require 'adam'
---require 'cutorch'
+require 'cutorch'
+require 'cunn'
 --torch.setdefaulttensortype('torch.CudaTensor')
---print(  cutorch.getDeviceProperties(cutorch.getDevice()) )
+print(  cutorch.getDeviceProperties(cutorch.getDevice()) )
 torch.setdefaulttensortype('torch.FloatTensor')
 local mnist = require('mnist')
 
@@ -24,13 +25,13 @@ opt.threads = 8
 opt.network_to_load = ""
 opt.network_name = "picorrection"
 opt.type = "ssvb"
-opt.trainSize = 600
-opt.testSize = 100
+opt.trainSize = 60000
+opt.testSize = 10000
 opt.plot = true
-opt.batchSize = 10
+opt.batchSize = 100
 opt.B = (opt.trainSize/opt.batchSize)--*1000
 opt.hidden = {12}
-opt.S = 10
+opt.S = 25
 opt.alpha = 0.9 -- NVIL
 opt.normcheck = true
 -- fix seed
@@ -70,21 +71,21 @@ geometry = {28,28}
 local input_size = geometry[1]*geometry[2]
 
 -- define model to train
-model = nn.Sequential()
+unwrapped_model = nn.Sequential()
 ------------------------------------------------------------
 -- regular 2-layer MLP
 ------------------------------------------------------------
-model:add(nn.View(input_size))
-model:add(nn.Linear(input_size, opt.hidden[1]))
-model:add(nn.ReLU())
+unwrapped_model:add(nn.View(input_size))
+unwrapped_model:add(nn.Linear(input_size, opt.hidden[1]))
+unwrapped_model:add(nn.ReLU())
 for i = 2, #opt.hidden do
-    model:add(nn.Linear(opt.hidden[i-1], opt.hidden[i]))
-    model:add(nn.ReLU())
+    unwrapped_model:add(nn.Linear(opt.hidden[i-1], opt.hidden[i]))
+    unwrapped_model:add(nn.ReLU())
 end
-model:add(nn.Linear(opt.hidden[#opt.hidden], #classes))
+unwrapped_model:add(nn.Linear(opt.hidden[#opt.hidden], #classes))
 
 -- retrieve parameters and gradients
-parameters, gradParameters = model:getParameters()
+parameters, gradParameters = unwrapped_model:getParameters()
 W = parameters:size(1)
 print("nr. of parameters: ", W)
 
@@ -104,13 +105,18 @@ end
 
 -- verbose
 print('<mnist> using model:')
-print(model)
+print(unwrapped_model)
 
 ----------------------------------------------------------------------
 -- loss function: negative log-likelihood
 --
-model:add(nn.LogSoftMax())
+unwrapped_model:add(nn.LogSoftMax())
 criterion = nn.ClassNLLCriterion()
+
+model = nn.Sequential()
+model:add(nn.Copy('torch.FloatTensor', 'torch.CudaTensor'))
+model:add(unwrapped_model)
+model:add(nn.Copy('torch.CudaTensor', 'torch.FloatTensor'))
 
 ----------------------------------------------------------------------
 -- preprocess dataset
@@ -155,17 +161,17 @@ function train(dataset, type)
 
         if type == 'vb' then
             -- sample W
-            local lc, le, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
+            local lc, le, acc = beta:train(inputs, targets, unwrapped_model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
         elseif type == 'ssvb' then
-            local le, lc, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
+            local le, lc, acc = beta:train(inputs, targets, unwrapped_model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
         else
-            local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
+            local err, acc = beta:train(inputs, targets, unwrapped_model, criterion, parameters, gradParameters, opt)
             error = error + err
             accuracy = accuracy + acc
         end
@@ -251,7 +257,7 @@ function test(dataset, type)
         local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, opt.testSize, geometry)
 
         -- test samples
-        local preds = model:forward(inputs)
+        local preds = unwrapped_model:forward(inputs)
         accuracy = accuracy + u.get_accuracy(preds, targets)
         local err = criterion:forward(preds, targets)
         avg_error = avg_error + err

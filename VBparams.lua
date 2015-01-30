@@ -11,7 +11,6 @@ local u = require('utils')
 local inspect = require 'inspect'
 
 local VBparams = {}
-torch.setdefaulttensortype('torch.FloatTensor')
 
 function VBparams:init(W, opt)
     self.W = W

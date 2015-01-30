@@ -11,7 +11,6 @@ local u = require('utils')
 local inspect = require 'inspect'
 
 local NNparams = {}
-torch.setdefaulttensortype('torch.FloatTensor')
 
 function NNparams:init(W, opt)
     self.optimState = opt.meanState
