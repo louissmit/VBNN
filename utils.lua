@@ -42,7 +42,7 @@ function utils.normalize(data)
 end
 
 function utils.num_grad(to_check, func)
-    local epsilon = 2*torch.sqrt(1e-12)*(1+torch.norm(to_check))
+    local epsilon = 0.000001--2*torch.sqrt(1e-20)*(1+torch.norm(to_check))
     print("epsilon: ", epsilon)
     to_check:add(epsilon)
     local F1 = func()
@@ -51,6 +51,7 @@ function utils.num_grad(to_check, func)
     local F2 = func()
     print("F2: ", torch.min(F2), torch.max(F2))
     to_check:add(epsilon)
+    print("DISTF1F2: ", torch.dist(F1, F2))
     local numgrad = torch.add(F1, -F2):mul(1 / (2*epsilon))
     return numgrad
 end

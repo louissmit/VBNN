@@ -20,7 +20,7 @@ function VBparams:init(W, opt)
 --        return torch.log(randomkit.normal(0.001, 0.01))
 --    end)
     self.means = torch.Tensor(W):apply(function(_)
-        return randomkit.normal(0, 0.1)
+        return randomkit.normal(0, 0.001)
     end)
 --    self.mu_hat = 0.0
 --    self.var_hat = 0.005625
@@ -40,7 +40,7 @@ function VBparams:compute_prior()
     local vars = torch.exp(self.lvars)
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
-    self.var_hat = (1/W)*torch.sum(torch.add(vars, self.mu_sqe))
+    self.var_hat = (1/self.W)*torch.sum(torch.add(vars, self.mu_sqe))
     return self.mu_hat, self.var_hat
 end
 
@@ -57,8 +57,13 @@ end
 
 function VBparams:calc_LC(B)
     local vars = torch.exp(self.lvars)
+    print(torch.mean(torch.log(torch.sqrt(vars))))
+    print(torch.var(torch.log(torch.sqrt(vars))))
+    print(torch.log(torch.sqrt(self.var_hat)))
     local LCfirst = torch.add(-torch.log(torch.sqrt(vars)), torch.log(torch.sqrt(self.var_hat)))
     local LCsecond = torch.add(self.mu_sqe, torch.add(vars, -self.var_hat)):mul(1/(2*self.var_hat))
+    print("LCFirst: ", torch.sum(torch.mul(LCfirst, 1/B)))
+    print("LCsecond: ", torch.sum(torch.mul(LCsecond, 1/B)))
     return torch.add(LCfirst, LCsecond):mul(1/B)
 end
 

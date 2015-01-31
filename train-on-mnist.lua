@@ -13,43 +13,43 @@ VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
 --require 'rmsprop'
 require 'adam'
-require 'cutorch'
+require 'torch'
 require 'cunn'
 --torch.setdefaulttensortype('torch.CudaTensor')
-print(  cutorch.getDeviceProperties(cutorch.getDevice()) )
-torch.setdefaulttensortype('torch.FloatTensor')
+--print( inspect(cutorch.getDeviceProperties(cutorch.getDevice()) ))
 local mnist = require('mnist')
 
 opt = {}
 opt.threads = 8
 opt.network_to_load = ""
-opt.network_name = "picorrection"
+opt.network_name = "wat"
 opt.type = "ssvb"
-opt.trainSize = 60000
-opt.testSize = 10000
+opt.cuda = true
+opt.trainSize = 20000
+opt.testSize = 1000
 opt.plot = true
-opt.batchSize = 100
-opt.B = (opt.trainSize/opt.batchSize)--*1000
-opt.hidden = {12}
-opt.S = 25
-opt.alpha = 0.9 -- NVIL
+opt.batchSize = 30
+opt.B = (opt.trainSize/opt.batchSize)--*100
+opt.hidden = {12}--,50,50,50}
+opt.S = 10
+opt.alpha = 0.8 -- NVIL
 opt.normcheck = true
 -- fix seed
 torch.manualSeed(1)
 
 -- optimisation params
 opt.varState = {
-    learningRate = 0.0000001,
+    learningRate = 0.000000002,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
 opt.meanState = {
-    learningRate = 0.00000001,
+    learningRate = 0.0000001,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
 opt.piState = {
-    learningRate = 0.00000000001,
+    learningRate = 0.0000000001,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -58,6 +58,7 @@ opt.piState = {
 torch.setnumthreads(opt.threads)
 print('<torch> set nb of threads to ' .. torch.getnumthreads())
 
+torch.setdefaulttensortype('torch.FloatTensor')
 
 
 ----------------------------------------------------------------------
@@ -71,22 +72,40 @@ geometry = {28,28}
 local input_size = geometry[1]*geometry[2]
 
 -- define model to train
-unwrapped_model = nn.Sequential()
+model = nn.Sequential()
 ------------------------------------------------------------
 -- regular 2-layer MLP
 ------------------------------------------------------------
-unwrapped_model:add(nn.View(input_size))
-unwrapped_model:add(nn.Linear(input_size, opt.hidden[1]))
-unwrapped_model:add(nn.ReLU())
+model:add(nn.Reshape(input_size))
+model:add(nn.Linear(input_size, opt.hidden[1]))
+model:add(nn.ReLU())
 for i = 2, #opt.hidden do
-    unwrapped_model:add(nn.Linear(opt.hidden[i-1], opt.hidden[i]))
-    unwrapped_model:add(nn.ReLU())
+    model:add(nn.Linear(opt.hidden[i-1], opt.hidden[i]))
+    model:add(nn.ReLU())
 end
-unwrapped_model:add(nn.Linear(opt.hidden[#opt.hidden], #classes))
+model:add(nn.Linear(opt.hidden[#opt.hidden], #classes))
+model:add(nn.LogSoftMax())
+criterion = nn.ClassNLLCriterion()
+if opt.cuda then
+    model:cuda()
+    criterion:cuda()
+end
+parameters, gradParameters = model:getParameters()
+W = parameters:size(1)
+
+-- if opt.cuda then
+--     unwrapped_model:cuda()
+--     model = nn.Sequential()
+--     model:add(nn.Copy('torch.FloatTensor', 'torch.CudaTensor'))
+--     model:add(unwrapped_model)
+--     model:add(nn.Copy('torch.CudaTensor', 'torch.FloatTensor'))
+-- else
+--     print("HEEHEH")
+--     model = unwrapped_model
+-- end
 
 -- retrieve parameters and gradients
-parameters, gradParameters = unwrapped_model:getParameters()
-W = parameters:size(1)
+
 print("nr. of parameters: ", W)
 
 if opt.network_to_load == '' then
@@ -105,18 +124,14 @@ end
 
 -- verbose
 print('<mnist> using model:')
-print(unwrapped_model)
+print(model)
 
 ----------------------------------------------------------------------
 -- loss function: negative log-likelihood
 --
-unwrapped_model:add(nn.LogSoftMax())
-criterion = nn.ClassNLLCriterion()
 
-model = nn.Sequential()
-model:add(nn.Copy('torch.FloatTensor', 'torch.CudaTensor'))
-model:add(unwrapped_model)
-model:add(nn.Copy('torch.CudaTensor', 'torch.FloatTensor'))
+
+
 
 ----------------------------------------------------------------------
 -- preprocess dataset
@@ -154,6 +169,11 @@ function train(dataset, type)
     for t = 1, opt.trainSize,opt.batchSize do
         --      local batchtime = sys.clock()
         local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, opt.trainSize, geometry)
+        if opt.cuda then
+            inputs = inputs:cuda()
+            targets = targets:cuda()
+        end
+
         collectgarbage()
 
         -- reset gradients
@@ -161,17 +181,17 @@ function train(dataset, type)
 
         if type == 'vb' then
             -- sample W
-            local lc, le, acc = beta:train(inputs, targets, unwrapped_model, criterion, parameters, gradParameters, opt)
+            local lc, le, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
         elseif type == 'ssvb' then
-            local le, lc, acc = beta:train(inputs, targets, unwrapped_model, criterion, parameters, gradParameters, opt)
+            local le, lc, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
         else
-            local err, acc = beta:train(inputs, targets, unwrapped_model, criterion, parameters, gradParameters, opt)
+            local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             error = error + err
             accuracy = accuracy + acc
         end
@@ -186,12 +206,13 @@ function train(dataset, type)
     time = time / opt.testSize
     print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
 
-    if type == 'vb' then
+    if type == 'vb' or type == 'ssvb' then
         print("beta.means:min(): ", torch.min(beta.means))
         print("beta.means:max(): ", torch.max(beta.means))
         print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
         print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
-    elseif type == 'ssvb' then
+    end
+    if type == 'ssvb' then
         print("beta.pi:min(): ", torch.min(beta.pi))
         print("beta.pi:max(): ", torch.max(beta.pi))
         print("beta.pi:avg(): ", torch.mean(beta.pi))
@@ -236,7 +257,7 @@ function test(dataset, type)
     if type == 'vb' then
         parameters:copy(beta.means)
     elseif type == 'ssvb' then
---        parameters:copy(torch.cmul(beta.means, beta.pi))
+        parameters:copy(torch.cmul(beta.means, beta.pi))
 --    local evalm = torch.Tensor(W):map2(beta.means, beta.vars, function(_, mu, var)
 --        return u.norm_pdf(mu,mu,var)
 --    end)
@@ -245,7 +266,7 @@ function test(dataset, type)
 --    end)
 --print(evalm)
 --        parameters:copy(torch.max(evalm, evalz))
-        parameters:copy(torch.cmul(beta.means, torch.pow(beta.pi,2):cmul(torch.pow(beta.vars, -1))))
+--        parameters:copy(torch.cmul(beta.means, torch.pow(beta.pi,2):cmul(torch.pow(beta.vars, -1))))
     end
 
     -- test over given dataset
@@ -255,9 +276,13 @@ function test(dataset, type)
         xlua.progress(t, opt.testSize)
 
         local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, opt.testSize, geometry)
+        if opt.cuda then
+            inputs = inputs:cuda()
+            targets = targets:cuda()
+        end
 
         -- test samples
-        local preds = unwrapped_model:forward(inputs)
+        local preds = model:forward(inputs)
         accuracy = accuracy + u.get_accuracy(preds, targets)
         local err = criterion:forward(preds, targets)
         avg_error = avg_error + err
@@ -286,8 +311,8 @@ while true do
 --    viz.show_uncertainties(model, parameters, testData, beta.means, beta.vars, opt.hidden)
 --    break
     -- train/test
---viz.show_parameters(beta.means, beta.lvars, beta.p, opt.hidden)
     local trainaccuracy, trainerror, lc, le = train(trainData, opt.type)
+    viz.show_parameters(beta.means, beta.vars, beta.pi, opt.hidden, opt.cuda)
 --    local trainaccuracy, lccc, leee = train(trainData, opt.type)
     print("TRAINACCURACY: ", trainaccuracy, trainerror)
     local testaccuracy, testerror = test(testData, opt.type)
@@ -296,7 +321,7 @@ while true do
 --    viz.graph_things(accuracies)
     accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy }
     errorLogger:add{['LL (train set)'] = trainerror, ['LL (test set)'] = testerror }
-    if opt.type == 'ssvb' then
+    if opt.type == 'ssvb' or opt.type == 'vb' then
         leLogger:add({['LE'] = le})
         lcLogger:add({['LC'] = lc})
     end
@@ -306,7 +331,7 @@ while true do
     if opt.plot then
         accLogger:style{['% accuracy (train set)'] = '-', ['% accuracy (test set)'] = '-'}
         errorLogger:style{['LL (train set)'] = '-', ['LL (test set)'] = '-' }
-        if opt.type == 'ssvb' then
+        if opt.type == 'ssvb' or opt.type=='vb' then
             leLogger:style({['LE'] = '-'})
             lcLogger:style({['LC'] = '-'})
             leLogger:plot()

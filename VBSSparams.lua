@@ -5,9 +5,7 @@
 -- Time: 1:34 PM
 -- To change this template use File | Settings | File Templates.
 --
-require 'torch'
 require 'randomkit'
-require 'nn'
 local u = require('utils')
 local inspect = require 'inspect'
 
@@ -16,7 +14,7 @@ local VBSSparams = {}
 
 function VBSSparams:init(W)
     self.W = W
-    self.lvars = torch.Tensor(W):fill(-5)
+    self.lvars = torch.Tensor(W):fill(-7)
 --    self.lvars = torch.Tensor(W):apply(function(_)
 --        return randomkit.uniform(-10, 0)
 --    end)
@@ -27,10 +25,15 @@ function VBSSparams:init(W)
     self.p = torch.Tensor(W):apply(function(_)
         return randomkit.normal(0, 0.001)
     end)
+    if opt.cuda then
+        self.means = self.means:cuda()
+        self.lvars = self.lvars:cuda()
+        self.p = self.p:cuda()
+    end
 --    self.p = torch.Tensor(W):fill(15.0)
 --    self.mu_hat = (1/self.W)*torch.sum(self.means)
 --    self.var_hat = 0.005625
---    self.pi_hat = 0.5
+--    self.pi_hat = 0.1
     -- optimisation state
     self.varState = opt.varState
     self.meanState = opt.meanState
@@ -43,29 +46,34 @@ end
 
 function VBSSparams:sampleTheta()
     local e = randomkit.normal(torch.Tensor(self.W):zero(), torch.Tensor(self.W):fill(1.0))
-    e = e:type('torch.FloatTensor')
+--    e = e:type('torch.FloatTensor')
 --    local z = randomkit.binomial(torch.Tensor(self.W):fill(1.0), self.pi)
-    local z = torch.Tensor(self.W):map(self.pi, function(_, p)
+    local z = torch.Tensor(self.W):map(self.pi:float(), function(_, p)
         return randomkit.binomial(1.0, p)
     end)
-    return e, z
+    if opt.cuda then
+        return e:cuda(), z:cuda()
+    else
+        return e:float(),z
+    end
 end
 
-function VBSSparams:compute_prior()
+function VBSSparams:compute_prior(B)
     self.vars = torch.exp(self.lvars)
     self.stdv = torch.sqrt(self.vars)
-    self.pi = nn.Sigmoid():forward(self.p)
+    self.pi = torch.pow(torch.add(torch.exp(-self.p),1),-1)
 
-    self.mu_hat = (1/self.W)*torch.sum(self.means) -- comment out for grad check
+
+    if self.update_counter == 0 then
+        self.mu_hat = (1/self.W)*torch.sum(self.means) -- comment out for grad check
+    end
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
---    print('musqe', torch.min(self.mu_sqe))
---    print('musqe', torch.max(self.mu_sqe))
-    self.var_hat = (1/self.W)*torch.sum(torch.add(self.vars, self.mu_sqe))
---    print('vars', torch.min(self.vars))
---    print('vars', torch.max(self.vars))
---    print('varhat', self.var_hat)
+   if self.update_counter == 0 then
+    self.var_hat = (1/(self.W))*torch.sum(torch.add(self.vars, self.mu_sqe))
     self.pi_hat = (1/self.W)*torch.sum(self.pi)
+    end
+
     return self.mu_hat, self.var_hat
 end
 
@@ -84,37 +92,35 @@ function VBSSparams:compute_pgrads(gradsum, opt)
     local minpi = torch.add(-self.pi, 1)
     local grad = torch.log(torch.mul(torch.pow(minpi, -1), 1-self.pi_hat))
     grad:add(torch.log(torch.mul(self.pi, 1/self.pi_hat)))
-    grad:add(torch.mul(minpi, -1/(1-self.pi_hat)))
-    grad:add(torch.mul(self.pi, -1/self.pi_hat))
---    local grad = torch.add(-torch.log(minpi), -torch.log(1-self.pi_hat))
---    grad:add(torch.log(pi))
---    grad:add(torch.log(self.pi_hat))
---    grad:cmul(torch.cmul(pi, minpi))
+    grad:mul(1/opt.B)
 
-    return torch.add(gradsum:mul(1/opt.S), grad:mul(1/opt.B))
+    return torch.add(gradsum:mul(1/opt.S), grad), grad
 end
 
 function VBSSparams:calc_LC(B)
+--    print("stdv", torch.mean(self.stdv))
+--    print("varhat", torch.sqrt(self.var_hat))
     local LCfirst = torch.add(-torch.log(self.stdv), torch.log(torch.sqrt(self.var_hat)))
+    local diffvar = torch.add(self.vars, -self.var_hat):mul(1/(2*self.var_hat))
+--    print(torch.mean(diffvar))
+--    print(torch.mean(self.mu_sqe))
     local LCsecond = torch.add(self.mu_sqe, torch.add(self.vars, -self.var_hat)):mul(1/(2*self.var_hat))
---    print(torch.min(torch.log(self.stdv)))
---    print(torch.max(torch.log(self.stdv)))
---    print(torch.log(torch.sqrt(self.var_hat)))
 
     local minpi = torch.add(-self.pi, 1)
     local LCthird = torch.add(torch.cmul(minpi, torch.log(minpi)), torch.cmul(self.pi, torch.log(self.pi)))
     LCthird:add(-torch.add(torch.mul(minpi, torch.log(1-self.pi_hat)), torch.mul(self.pi, torch.log(self.pi_hat))))
---    print("LCFirst: ", torch.sum(LCfirst))
---    print("LCsecond: ", torch.sum(LCsecond))
---    print("LCthird: ", torch.sum(LCthird))
---    exit()
+--    print("LCFirst: ", torch.sum(torch.mul(LCfirst, 1/B)))
+--    print("LCFirst: ", torch.min(torch.mul(LCfirst, 1/B)))
+--    print("LCFirst: ", torch.max(torch.mul(LCfirst, 1/B)))
+--    print("LCsecond: ", torch.sum(torch.mul(LCsecond, 1/B)))
+--    print("LCthird: ", torch.sum(torch.mul(LCthird, 1/B)))
     return torch.add(LCfirst, torch.add(LCsecond, LCthird)):mul(1/B)
 end
 
-function VBSSparams:check_pgrads(opt)
+function VBSSparams:check_pgrads(gradsum, opt)
     local numgrad = u.num_grad(self.p, function() return self:calc_LC(opt.B) end)
-    local grad = self:compute_pgrads(opt)
-    return grad, numgrad
+    local _, lc_grad = self:compute_pgrads(gradsum, opt)
+    return lc_grad, numgrad
 end
 
 function VBSSparams:check_mugrads(gradsum, opt)
@@ -137,6 +143,13 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
     local mu_gradsum = torch.Tensor(self.W):zero()
     local pi_gradsum = torch.Tensor(self.W):zero()
     local pi_gradsum2 = torch.Tensor(self.W):zero()
+    if opt.cuda then
+        var_gradsum = var_gradsum:cuda()
+        mu_gradsum = mu_gradsum:cuda()
+        pi_gradsum = pi_gradsum:cuda()
+        pi_gradsum2 = pi_gradsum2:cuda()
+    end
+
     local outputs
     local LE = 0
     local accuracy = 0.0
@@ -163,15 +176,19 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
         gradParameters:zero()
     end
 
+--    print((LL_sum/opt.S))
     self.c = self.c*opt.alpha + (1-opt.alpha)*(LL_sum/opt.S)
-    self.c = self.c/opt.B
+--    self.c = self.c/opt.batchSize
+--    print(self.c)
     pi_gradsum = pi_gradsum + pi_gradsum2:mul(self.c)
     LE = LE/(opt.S)
     accuracy  = accuracy/opt.S
-    --    print("LE: ", LE)
+--        print("LE: ", LE)
     local LC = self:calc_LC(opt.B)
 --    print("LCmin: ",torch.min(LC))
 --    print("LCmax: ",torch.max(LC))
+--    print(mu_gradsum:norm(), var_gradsum:norm(), pi_gradsum:norm())
+--    exit()
 --    accuracy = accuracy/opt.S
     return torch.add(LC, LE), LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum
 end
@@ -179,49 +196,19 @@ end
 
 function VBSSparams:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
     -- update optimal prior alpha
-    local mu_hat, var_hat = self:compute_prior()
+    self:compute_prior(opt.B)
+
     local L,LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum = self:runModel(inputs, targets, model, criterion, parameters, gradParameters, opt)
 
     local vb_mugrads, mlcg = self:compute_mugrads(mu_gradsum, opt)
---    print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
---    local numgrad = u.num_grad(self.means, function() return self:runModel(inputs, targets, model, parameters, gradParameters, opt) end)
---    print(torch.min(mlcg), torch.max(mlcg))
---    print('minmugradcheck: ', torch.min(vb_mugrads), torch.min(numgrad))
---    print('maxmugradcheck: ', torch.max(vb_mugrads), torch.max(numgrad))
---    print('mugradcheck: ', torch.max(torch.abs(torch.add(vb_mugrads, -numgrad))))
---    print("-----------------------")
---    local grad, numgrad = self:check_mugrads(mu_gradsum, opt)
---    print('minmugradcheck: ', torch.min(grad), torch.min(numgrad))
---    print('maxmugradcheck: ', torch.max(grad), torch.max(numgrad))
---    print('mugradcheck: ', torch.max(torch.abs(torch.add(grad, -numgrad))))
---    exit()
-
     local vb_vargrads, vlcg = self:compute_vargrads(var_gradsum, opt)
---    local numgrad = u.num_grad(self.lvars, function() return self:runModel(inputs, targets, model, parameters, gradParameters, opt) end)
---    print('minmugradcheck: ', torch.min(vb_vargrads), torch.min(numgrad))
---    print('maxmugradcheck: ', torch.max(vb_vargrads), torch.max(numgrad))
---    print('mugradcheck: ', torch.max(torch.abs(torch.add(vb_vargrads, -numgrad))))
-
     local pi_grads = self:compute_pgrads(pi_gradsum, opt)
 
---    local LC = self:calc_LC(opt.B)
---    local grad, numgrad = self:check_pgrads(opt)
---    print('minpgradcheck: ', torch.min(grad), torch.min(numgrad))
---    print('maxpgradcheck: ', torch.max(grad), torch.max(numgrad))
---    print('pgradcheck: ', torch.max(torch.add(grad, -numgrad)))
---    grad, numgrad = self:check_mugrads(gradsum, opt)
---    print('minmugradcheck: ', torch.min(grad), torch.min(numgrad))
---    print('maxmugradcheck: ', torch.max(grad), torch.max(numgrad))
---    print('mugradcheck: ', torch.max(torch.add(grad, -numgrad)))
---    local grad, numgrad = self:check_vargrads(LN_squared, opt)
---    print('minvargradcheck: ', torch.min(grad), torch.min(numgrad))
---    print('maxvargradcheck: ', torch.max(grad), torch.max(numgrad))
---    print('vargradcheck: ', torch.max(torch.abs(torch.add(grad, -numgrad))))
---    exit()
     local LD = LE + torch.sum(LC)
 
-    --            print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
-    --            print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
+--    print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
+--    print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
+--    print("vb_pigrads: ", torch.min(pi_grads), torch.max(pi_grads))
 
 
     local x, _, update = adam(function(_) return LD, vb_mugrads:mul(1/opt.batchSize) end, self.means, self.meanState)
@@ -231,10 +218,10 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     local var_normratio = torch.norm(update)/torch.norm(x)
 --    local var_normratio = 0
 
-    local x, _, update = adam(function(_) return LD, pi_grads:mul(1/opt.batchSize) end, self.p, self.piState)
-    local pi_normratio = torch.norm(update)/torch.norm(x)
+--    local x, _, update = adam(function(_) return LD, pi_grads:mul(1/opt.batchSize) end, self.p, self.piState)
+--    local pi_normratio = torch.norm(update)/torch.norm(x)
 
---    local pi_normratio = 0
+    local pi_normratio = 0
     if opt.normcheck and (self.update_counter % 1)==0 then
         nrlogger:style({['mu'] = '-',['var'] = '-',['pi'] = '-'})
         nrlogger:add{['mu'] = mu_normratio, ['var'] = var_normratio, ['pi'] = pi_normratio }

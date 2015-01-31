@@ -19,12 +19,14 @@ function split(string)
     return res
 end
 
-function viz.show_parameters(weights, lvars, p, hidden)
+function viz.show_parameters(weights, vars, pi, hidden, cuda)
     local weights = torch.Tensor(W):copy(weights):resize(hidden[1], 28, 28)
-    local vars = torch.Tensor(W):copy(torch.exp(lvars)):resize(hidden[1], 28, 28)
-    local pi = false
-    if p then
-        pi = torch.Tensor(W):copy(nn.Sigmoid():forward(p)):resize(hidden[1], 28, 28)
+    local vars = torch.Tensor(W):copy(vars):resize(hidden[1], 28, 28)
+    local pi = torch.Tensor(W):copy(pi):resize(hidden[1], 28, 28)
+    if cuda then
+        weights = weights:float()
+        vars = vars:float()
+        pi = pi:float()
     end
 
     local meanimgs = {}
