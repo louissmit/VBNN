@@ -62,4 +62,13 @@ function utils.norm_pdf(x, mu, sigma)
     return torch.exp(-.5 * (x-mu)*(x-mu)/(sigma*sigma)) / torch.sqrt(2.0*math.pi*sigma*sigma)
 end
 
+function utils.safe_save(object, folder, name)
+    local filename = paths.concat(folder, name)
+    print('Saving '..name..filename)
+    if paths.filep(filename) then
+        os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
+    end
+    torch.save(filename, object)
+end
+
 return utils

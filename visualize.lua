@@ -20,9 +20,9 @@ function split(string)
 end
 
 function viz.show_parameters(weights, vars, pi, hidden, cuda)
-    local weights = torch.Tensor(W):copy(weights):resize(hidden[1], 28, 28)
-    local vars = torch.Tensor(W):copy(vars):resize(hidden[1], 28, 28)
-    local pi = torch.Tensor(W):copy(pi):resize(hidden[1], 28, 28)
+    local weights = torch.Tensor(opt.W):copy(weights):resize(hidden[1], 28, 28)
+    local vars = torch.Tensor(opt.W):copy(vars):resize(hidden[1], 28, 28)
+    local pi = torch.Tensor(opt.W):copy(pi):resize(hidden[1], 28, 28)
     if cuda then
         weights = weights:float()
         vars = vars:float()

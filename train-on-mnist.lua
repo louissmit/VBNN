@@ -21,7 +21,7 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 8
 opt.network_to_load = ""
-opt.network_name = "lowvar"
+opt.network_name = "test"
 opt.type = "ssvb"
 --opt.cuda = true
 opt.trainSize = 6000
@@ -37,6 +37,12 @@ opt.viz = true
 -- fix seed
 torch.manualSeed(1)
 
+opt.mu_init = 0.1
+opt.var_init = -5
+opt.pi_init = {
+    mu = 3,
+    var = 0.00001
+}
 -- optimisation params
 opt.varState = {
     learningRate = 0.00002,
@@ -49,7 +55,12 @@ opt.meanState = {
     updateDecay = 0.9
 }
 opt.piState = {
-    learningRate = 0.0000001,
+    learningRate = 0.000001,
+    momentumDecay = 0.1,
+    updateDecay = 0.9
+}
+opt.smState = {
+    learningRate = 0.00000002,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -79,9 +90,11 @@ model = nn.Sequential()
 model:add(nn.Reshape(input_size))
 model:add(nn.Linear(input_size, opt.hidden[1]))
 model:add(nn.ReLU())
+opt.W = input_size*opt.hidden[1]+opt.hidden[1]--parameters:size(1)
 for i = 2, #opt.hidden do
     model:add(nn.Linear(opt.hidden[i-1], opt.hidden[i]))
     model:add(nn.ReLU())
+    opt.W = opt.W + opt.hidden[i-1]*opt.hidden[i]+opt.hidden[i]
 end
 model:add(nn.Linear(opt.hidden[#opt.hidden], #classes))
 model:add(nn.LogSoftMax())
@@ -91,7 +104,6 @@ if opt.cuda then
     criterion:cuda()
 end
 parameters, gradParameters = model:getParameters()
-W = input_size*opt.hidden[1]+opt.hidden[1]--parameters:size(1)
 
 -- if opt.cuda then
 --     unwrapped_model:cuda()
@@ -100,26 +112,26 @@ W = input_size*opt.hidden[1]+opt.hidden[1]--parameters:size(1)
 --     model:add(unwrapped_model)
 --     model:add(nn.Copy('torch.CudaTensor', 'torch.FloatTensor'))
 -- else
---     print("HEEHEH")
 --     model = unwrapped_model
 -- end
 
 -- retrieve parameters and gradients
 
-print("nr. of parameters: ", W)
+print("nr. of parameters: ", opt.W)
 
 if opt.network_to_load == '' then
     if opt.type == 'vb' then
         beta = VBparams:init(W, opt)
     elseif opt.type == 'ssvb' then
-        beta = VBSSparams:init(W, opt)
+        beta = VBSSparams:init(opt)
     else
         beta = NNparams:init(W, opt)
     end
 else
    print('<trainer> reloading previously trained network')
-   local filename = paths.concat(opt.network_to_load, 'network')
-   beta = torch.load(filename)
+    if opt.type == 'ssvb' then
+        beta = VBSSparams:load(opt.network_to_load)
+    end
 end
 
 -- verbose
@@ -147,6 +159,7 @@ u.normalize(testData.inputs)
 ----------------------------------------------------------------------
 -- define training and testing functions
 --
+
 
 
 -- training function
@@ -224,16 +237,8 @@ function train(dataset, type)
     end
 
     -- save/log current net
-    local filename = paths.concat(opt.network_name, 'network')
-    os.execute('mkdir -p ' .. sys.dirname(filename))
-    if paths.filep(filename) then
-        os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
-    end
-    print('<trainer> saving network to '..filename)
-    if type == 'vb' or type == 'ssvb' then
-        torch.save(filename, beta)
-    else
-        torch.save(filename, parameters)
+    if opt.type == 'ssvb' or opt.type == 'vb' then
+        beta:save(opt)
     end
 
     -- next epoch
@@ -262,7 +267,7 @@ function test(dataset, type)
     if type == 'vb' then
         parameters:copy(beta.means)
     elseif type == 'ssvb' then
-        local p = parameters:narrow(1,1,W)
+        local p = parameters:narrow(1,1, opt.W)
         p:copy(torch.cmul(beta.means, beta.pi))
 --    local evalm = torch.Tensor(W):map2(beta.means, beta.vars, function(_, mu, var)
 --        return u.norm_pdf(mu,mu,var)
