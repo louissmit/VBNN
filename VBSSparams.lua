@@ -72,8 +72,8 @@ function VBSSparams:compute_mugrads(gradsum, opt)
 end
 
 function VBSSparams:compute_vargrads(gradsum, opt)
-    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):mul(1/opt.B)
-    return torch.add(lcg, gradsum:mul(1/opt.S)):cmul(self.vars), lcg:mul(1/2):cmul(self.vars)
+    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):cmul(self.vars):mul(1/opt.B)
+    return torch.add(lcg, gradsum:mul(1/opt.S)):mul(1/2), lcg:mul(1/2)
 --    return torch.add(lcg, gradsum:mul(1/(2*opt.S)):cmul(torch.pow(self.stdv, -1))), lcg:mul(1/2):cmul(self.vars)
 end
 
@@ -206,9 +206,9 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     local x, _, update = adam(function(_) return LD, vb_mugrads:mul(1/opt.batchSize) end, self.means, self.meanState)
     local mu_normratio = torch.norm(update)/torch.norm(x)
 
---    local x, _, update = adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
---    local var_normratio = torch.norm(update)/torch.norm(x)
-    local var_normratio = 0
+    local x, _, update = adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
+    local var_normratio = torch.norm(update)/torch.norm(x)
+--    local var_normratio = 0
 
 --    local x, _, update = adam(function(_) return LD, pi_grads:mul(1/opt.batchSize) end, self.p, self.piState)
 --    local pi_normratio = torch.norm(update)/torch.norm(x)

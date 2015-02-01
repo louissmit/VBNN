@@ -22,7 +22,7 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 8
 opt.network_to_load = ""
-opt.network_name = "wat"
+opt.network_name = "dunno"
 opt.type = "ssvb"
 --opt.cuda = true
 opt.trainSize = 6000
@@ -33,14 +33,14 @@ opt.B = (opt.trainSize/opt.batchSize)--*100
 opt.hidden = {12}--,50,50,50}
 opt.S = 10
 opt.alpha = 0.8 -- NVIL
---opt.normcheck = true
+opt.normcheck = true
 --opt.viz = true
 -- fix seed
 torch.manualSeed(1)
 
 -- optimisation params
 opt.varState = {
-    learningRate = 0.0000002,
+    learningRate = 0.00002,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -190,8 +190,9 @@ function train(dataset, type)
             local le, lc, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
-            avg_le = avg_le + le        print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-        print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
+            avg_le = avg_le + le
+--            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+--            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
         else
             local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             error = error + err
