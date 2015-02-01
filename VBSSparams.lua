@@ -12,18 +12,17 @@ local inspect = require 'inspect'
 
 local VBSSparams = {}
 
-function VBSSparams:init(W)
-    self.W = W
-    self.lvars = torch.Tensor(W):fill(-5)
---    self.lvars = torch.Tensor(W):apply(function(_)
---        return randomkit.uniform(-10, 0)
---    end)
+function VBSSparams:init(opt)
+    self.W = opt.W
+
     self.means = randomkit.normal(
         torch.Tensor(self.W):zero(),
-        torch.Tensor(self.W):fill(0.1)):float()
+        torch.Tensor(self.W):fill(opt.mu_init)):float()
+    self.lvars = torch.Tensor(self.W):fill(opt.var_init)
     self.p = randomkit.normal(
-        torch.Tensor(self.W):fill(3),
-        torch.Tensor(self.W):fill(0.0001)):float()
+        torch.Tensor(self.W):fill(opt.pi_init.mu),
+        torch.Tensor(self.W):fill(opt.pi_init.var)):float()
+    self.smp = parameters:narrow(1, self.W, parameters:size(1)-self.W) -- softmax layer params
 
     if opt.cuda then
         self.means = self.means:cuda()
@@ -34,10 +33,10 @@ function VBSSparams:init(W)
     -- optimisation state
     self.varState = opt.varState
     self.meanState = opt.meanState
+    self.smState = opt.smState
     self.piState = opt.piState
     self.c = 0
 
-    self.update_counter = 0
     return self
 end
 
@@ -126,12 +125,46 @@ function VBSSparams:check_vargrads(LN_squared, opt)
     return glc, numgrad
 end
 
+function VBSSparams:load(model_dir)
+    local dir = paths.concat(model_dir, 'parameters')
+    self.means = torch.load(paths.concat(dir, 'means'))
+    self.lvars = torch.load(paths.concat(dir, 'lvars'))
+    self.p = torch.load(paths.concat(dir, 'p'))
+    self.smp = torch.load(paths.concat(dir, 'smp'))
+    dir = paths.concat(model_dir, 'optimstate')
+    self.meanState = torch.load(paths.concat(dir, 'mean'))
+    self.varState = torch.load(paths.concat(dir, 'var'))
+    self.piState = torch.load(paths.concat(dir, 'pi'))
+    self.smState = torch.load(paths.concat(dir, 'smp'))
+    self.W = torch.load(paths.concat(model_dir, 'opt')).W
+
+    parameters:narrow(1, self.W, parameters:size(1)-self.W):copy(self.smp) --load softmax layer
+    return self
+end
+
+function VBSSparams:save(opt)
+    u.safe_save(opt, opt.network_name, 'opt')
+    local dir = paths.concat(opt.network_name, 'parameters')
+    os.execute('mkdir -p ' .. dir)
+    u.safe_save(self.means, dir, 'means')
+    u.safe_save(self.lvars, dir, 'lvars')
+    u.safe_save(self.p, dir, 'p')
+    u.safe_save(self.smp, dir, 'smp')
+    local dir = paths.concat(opt.network_name, 'optimstate')
+    os.execute('mkdir ' .. dir)
+    u.safe_save(self.meanState, dir, 'mean')
+    u.safe_save(self.varState, dir, 'var')
+    u.safe_save(self.piState, dir, 'pi')
+    u.safe_save(self.smState, dir, 'smp')
+end
 
 function VBSSparams:runModel(inputs, targets, model, criterion, parameters, gradParameters, opt)
+    local smsize = parameters:size(1)-self.W
     local var_gradsum = torch.Tensor(self.W):zero()
     local mu_gradsum = torch.Tensor(self.W):zero()
     local pi_gradsum = torch.Tensor(self.W):zero()
     local pi_gradsum2 = torch.Tensor(self.W):zero()
+    local sm_gradsum = torch.Tensor(smsize):zero()
     if opt.cuda then
         var_gradsum = var_gradsum:cuda()
         mu_gradsum = mu_gradsum:cuda()
@@ -149,16 +182,25 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
         local e, z = self:sampleTheta()
         local w = torch.cmul(torch.add(self.means, torch.cmul(self.stdv, e)), z)
 
-        parameters:copy(w)
+        local p = parameters:narrow(1,1, self.W)
+        local g = gradParameters:narrow(1,1, self.W)
+        p:copy(w)
+
         outputs = model:forward(inputs)
+        local LL = criterion:forward(outputs, targets)
         accuracy = accuracy + u.get_accuracy(outputs, targets)
+
         local df_do = criterion:backward(outputs, targets)
         model:backward(inputs, df_do)
-        local LL = criterion:forward(outputs, targets)
+
+
         LE = LE + LL
         LL_sum = LL_sum + LL
-        mu_gradsum:add(torch.cmul(z, gradParameters))
-        var_gradsum:add(torch.cmul(self.stdv, torch.cmul(e, torch.cmul(z, gradParameters))))
+        local smg = gradParameters:narrow(1, self.W, smsize)
+        sm_gradsum:add(smg)
+        mu_gradsum:add(torch.cmul(z, g))
+        var_gradsum:add(torch.cmul(self.stdv, torch.cmul(e, torch.cmul(z, g))))
+
         local pz = torch.add(z, -self.pi)
         pi_gradsum:add(pz:mul(LL))
         pi_gradsum2:add(pz)
@@ -180,7 +222,7 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
 --    print(mu_gradsum:norm(), var_gradsum:norm(), pi_gradsum:norm())
 --    exit()
 --    accuracy = accuracy/opt.S
-    return torch.add(LC, LE), LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum
+    return torch.add(LC, LE), LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum, sm_gradsum:mul(1/opt.S)
 end
 
 
@@ -188,7 +230,7 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     -- update optimal prior alpha
     self:compute_prior(opt.B)
 
-    local L,LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum = self:runModel(inputs, targets, model, criterion, parameters, gradParameters, opt)
+    local L,LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum, sm_grad = self:runModel(inputs, targets, model, criterion, parameters, gradParameters, opt)
 --    print("var_gradsum: ", torch.mean(var_gradsum), torch.var(var_gradsum))
 
     local vb_mugrads, mlcg = self:compute_mugrads(mu_gradsum, opt)
@@ -210,18 +252,19 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     local var_normratio = torch.norm(update)/torch.norm(x)
 --    local var_normratio = 0
 
---    local x, _, update = adam(function(_) return LD, pi_grads:mul(1/opt.batchSize) end, self.p, self.piState)
---    local pi_normratio = torch.norm(update)/torch.norm(x)
+    local x, _, update = adam(function(_) return LD, pi_grads:mul(1/opt.batchSize) end, self.p, self.piState)
+    local pi_normratio = torch.norm(update)/torch.norm(x)
 --
-    local pi_normratio = 0
-    if opt.normcheck and (self.update_counter % 1)==0 then
+    local x, _, update = adam(function(_) return _, sm_grad:mul(1/opt.batchSize) end, self.smp, self.smState)
+
+--    local pi_normratio = 0
+    if opt.normcheck then
         nrlogger:style({['mu'] = '-',['var'] = '-',['pi'] = '-'})
         nrlogger:add{['mu'] = mu_normratio, ['var'] = var_normratio, ['pi'] = pi_normratio }
         nrlogger:plot()
     end
 
 
-    self.update_counter = self.update_counter + 1
     return LE, torch.sum(LC), accuracy
 end
 
