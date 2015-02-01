@@ -13,16 +13,15 @@ VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
 --require 'rmsprop'
 require 'adam'
-require 'torch'
+require 'cutorch'
 require 'cunn'
 --torch.setdefaulttensortype('torch.CudaTensor')
 --print( inspect(cutorch.getDeviceProperties(cutorch.getDevice()) ))
 local mnist = require('mnist')
-
 opt = {}
 opt.threads = 8
 opt.network_to_load = ""
-opt.network_name = "wat"
+opt.network_name = "lowvar"
 opt.type = "ssvb"
 --opt.cuda = true
 opt.trainSize = 6000
@@ -34,13 +33,13 @@ opt.hidden = {12}--,50,50,50}
 opt.S = 10
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
---opt.viz = true
+opt.viz = true
 -- fix seed
 torch.manualSeed(1)
 
 -- optimisation params
 opt.varState = {
-    learningRate = 0.0000002,
+    learningRate = 0.00002,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -92,7 +91,7 @@ if opt.cuda then
     criterion:cuda()
 end
 parameters, gradParameters = model:getParameters()
-W = parameters:size(1)
+W = input_size*opt.hidden[1]+opt.hidden[1]--parameters:size(1)
 
 -- if opt.cuda then
 --     unwrapped_model:cuda()
@@ -186,12 +185,16 @@ function train(dataset, type)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
+            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
         elseif type == 'ssvb' then
+
             local le, lc, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
-            avg_le = avg_le + le        print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-        print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
+            avg_le = avg_le + le
+--            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+--            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
         else
             local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             error = error + err
@@ -259,7 +262,8 @@ function test(dataset, type)
     if type == 'vb' then
         parameters:copy(beta.means)
     elseif type == 'ssvb' then
-        parameters:copy(torch.cmul(beta.means, beta.pi))
+        local p = parameters:narrow(1,1,W)
+        p:copy(torch.cmul(beta.means, beta.pi))
 --    local evalm = torch.Tensor(W):map2(beta.means, beta.vars, function(_, mu, var)
 --        return u.norm_pdf(mu,mu,var)
 --    end)

@@ -34,6 +34,11 @@ function VBSSparams:init(W)
     -- optimisation state
     self.varState = opt.varState
     self.meanState = opt.meanState
+    self.smState = {
+    learningRate = 0.00000002,
+    momentumDecay = 0.1,
+    updateDecay = 0.9
+}
     self.piState = opt.piState
     self.c = 0
 
@@ -72,8 +77,8 @@ function VBSSparams:compute_mugrads(gradsum, opt)
 end
 
 function VBSSparams:compute_vargrads(gradsum, opt)
-    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):mul(1/opt.B)
-    return torch.add(lcg, gradsum:mul(1/opt.S)):cmul(self.vars), lcg:mul(1/2):cmul(self.vars)
+    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):cmul(self.vars):mul(1/opt.B)
+    return torch.add(lcg, gradsum:mul(1/opt.S)):mul(1/2), lcg:mul(1/2)
 --    return torch.add(lcg, gradsum:mul(1/(2*opt.S)):cmul(torch.pow(self.stdv, -1))), lcg:mul(1/2):cmul(self.vars)
 end
 
@@ -149,16 +154,23 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
         local e, z = self:sampleTheta()
         local w = torch.cmul(torch.add(self.means, torch.cmul(self.stdv, e)), z)
 
-        parameters:copy(w)
+        local p = parameters:narrow(1,1,W)
+        local g = gradParameters:narrow(1,1,W)
+        p:copy(w)
+--        parameters:copy(w)
         outputs = model:forward(inputs)
         accuracy = accuracy + u.get_accuracy(outputs, targets)
         local df_do = criterion:backward(outputs, targets)
         model:backward(inputs, df_do)
+        local smp = parameters:narrow(1,W,parameters:size(1)-W)
+        local smg = gradParameters:narrow(1,W,parameters:size(1)-W)
+        local x, _, update = adam(function(_) return _, smg:mul(1/opt.batchSize) end, smp, self.smState)
         local LL = criterion:forward(outputs, targets)
         LE = LE + LL
         LL_sum = LL_sum + LL
-        mu_gradsum:add(torch.cmul(z, gradParameters))
-        var_gradsum:add(torch.cmul(self.stdv, torch.cmul(e, torch.cmul(z, gradParameters))))
+        mu_gradsum:add(torch.cmul(z, g))
+        var_gradsum:add(torch.cmul(self.stdv, torch.cmul(e, torch.cmul(z, g))))
+
         local pz = torch.add(z, -self.pi)
         pi_gradsum:add(pz:mul(LL))
         pi_gradsum2:add(pz)
@@ -206,9 +218,9 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     local x, _, update = adam(function(_) return LD, vb_mugrads:mul(1/opt.batchSize) end, self.means, self.meanState)
     local mu_normratio = torch.norm(update)/torch.norm(x)
 
---    local x, _, update = adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
---    local var_normratio = torch.norm(update)/torch.norm(x)
-    local var_normratio = 0
+    local x, _, update = adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
+    local var_normratio = torch.norm(update)/torch.norm(x)
+--    local var_normratio = 0
 
 --    local x, _, update = adam(function(_) return LD, pi_grads:mul(1/opt.batchSize) end, self.p, self.piState)
 --    local pi_normratio = torch.norm(update)/torch.norm(x)

@@ -124,9 +124,9 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
 
     local mu_normratio = torch.norm(update)/torch.norm(x)
 
---    local x, _, update = adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
---    local var_normratio = torch.norm(update)/torch.norm(x)
-    local var_normratio = 0
+    local x, _, update = adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
+    local var_normratio = torch.norm(update)/torch.norm(x)
+--    local var_normratio = 0
     if opt.normcheck and (self.update_counter % 1)==0 then
 --        print("MU: ", mu_normratio)
 --        print("VAR: ", var_normratio)
