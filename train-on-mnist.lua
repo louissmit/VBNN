@@ -24,32 +24,33 @@ opt.threads = 8
 opt.network_to_load = ""
 opt.network_name = "wat"
 opt.type = "ssvb"
-opt.cuda = true
-opt.trainSize = 20000
+--opt.cuda = true
+opt.trainSize = 6000
 opt.testSize = 1000
 opt.plot = true
-opt.batchSize = 30
+opt.batchSize = 10
 opt.B = (opt.trainSize/opt.batchSize)--*100
 opt.hidden = {12}--,50,50,50}
 opt.S = 10
 opt.alpha = 0.8 -- NVIL
-opt.normcheck = true
+--opt.normcheck = true
+--opt.viz = true
 -- fix seed
 torch.manualSeed(1)
 
 -- optimisation params
 opt.varState = {
-    learningRate = 0.000000002,
+    learningRate = 0.0000002,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
 opt.meanState = {
-    learningRate = 0.0000001,
+    learningRate = 0.00000002,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
 opt.piState = {
-    learningRate = 0.0000000001,
+    learningRate = 0.0000001,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -189,7 +190,8 @@ function train(dataset, type)
             local le, lc, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
-            avg_le = avg_le + le
+            avg_le = avg_le + le        print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+        print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
         else
             local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             error = error + err
@@ -312,7 +314,9 @@ while true do
 --    break
     -- train/test
     local trainaccuracy, trainerror, lc, le = train(trainData, opt.type)
-    viz.show_parameters(beta.means, beta.vars, beta.pi, opt.hidden, opt.cuda)
+    if opt.viz then
+        viz.show_parameters(beta.means, beta.vars, beta.pi, opt.hidden, opt.cuda)
+    end
 --    local trainaccuracy, lccc, leee = train(trainData, opt.type)
     print("TRAINACCURACY: ", trainaccuracy, trainerror)
     local testaccuracy, testerror = test(testData, opt.type)

@@ -14,13 +14,13 @@ local VBparams = {}
 
 function VBparams:init(W, opt)
     self.W = W
-    self.lvars = torch.Tensor(W):fill(-16)
+    self.lvars = torch.Tensor(W):fill(-5)
 --    self.lvars = torch.Tensor(W):apply(function(_)
 --        return randomkit.uniform(-10, -5)
 --        return torch.log(randomkit.normal(0.001, 0.01))
 --    end)
     self.means = torch.Tensor(W):apply(function(_)
-        return randomkit.normal(0, 0.001)
+        return randomkit.normal(0, 0.1)
     end)
 --    self.mu_hat = 0.0
 --    self.var_hat = 0.005625
@@ -57,13 +57,13 @@ end
 
 function VBparams:calc_LC(B)
     local vars = torch.exp(self.lvars)
-    print(torch.mean(torch.log(torch.sqrt(vars))))
-    print(torch.var(torch.log(torch.sqrt(vars))))
-    print(torch.log(torch.sqrt(self.var_hat)))
+--    print(torch.mean(torch.log(torch.sqrt(vars))))
+--    print(torch.var(torch.log(torch.sqrt(vars))))
+--    print(torch.log(torch.sqrt(self.var_hat)))
     local LCfirst = torch.add(-torch.log(torch.sqrt(vars)), torch.log(torch.sqrt(self.var_hat)))
     local LCsecond = torch.add(self.mu_sqe, torch.add(vars, -self.var_hat)):mul(1/(2*self.var_hat))
-    print("LCFirst: ", torch.sum(torch.mul(LCfirst, 1/B)))
-    print("LCsecond: ", torch.sum(torch.mul(LCsecond, 1/B)))
+--    print("LCFirst: ", torch.sum(torch.mul(LCfirst, 1/B)))
+--    print("LCsecond: ", torch.sum(torch.mul(LCsecond, 1/B)))
     return torch.add(LCfirst, LCsecond):mul(1/B)
 end
 
@@ -108,6 +108,8 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     local vb_vargrads, vlcg = self:compute_vargrads(LN_squared, opt)
 
     local LC = self:calc_LC(opt.B)
+    print("LC: ", LC:sum())
+    print("LE: ", LE)
 --    local grad, numgrad = self:check_vargrads(LN_squared, opt)
 --    print('minvargradcheck: ', torch.min(grad), torch.min(numgrad))
 --    print('maxvargradcheck: ', torch.max(grad), torch.max(numgrad))
