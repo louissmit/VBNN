@@ -102,23 +102,18 @@ function viz.show_uncertainties(model, parameters, testData, means, vars, hidden
 
 end
 
-function viz.graph_things(data)
-    local values = {}
-    for k, v in pairs(data) do
-        table.insert(values, {k,v})
+function viz.graph_things(opt, name)
+    local graphthing = {}
+    graphthing.name = name
+    graphthing.logger = optim.Logger(paths.concat(opt.network_name, name))
+    function graphthing:add(value)
+        self.logger:add({[self.name] = value})
     end
-
-    local data = {
-        key = 'Legend',
-        values = values
-    }
-    gfx.chart(data, {
-        chart = 'line', -- or: bar, stacked, multibar, scatter
-        width = 600,
-        height = 450,
-        win = 'chart',
-        refresh= true,
-    })
+    function graphthing:plot()
+        self.logger:style{[self.name] = '-' }
+        self.logger:plot()
+    end
+    return graphthing
 end
 
 --file = io.open('logs/logs/test.log', "r")

@@ -59,7 +59,13 @@ end
 function utils.isnan(x) return x ~= x end
 
 function utils.norm_pdf(x, mu, sigma)
-    return torch.exp(-.5 * (x-mu)*(x-mu)/(sigma*sigma)) / torch.sqrt(2.0*math.pi*sigma*sigma)
+    print(sigma:mean())
+    local sigmasq = torch.pow(sigma,2)
+    local exp = torch.exp(torch.cdiv(torch.pow((x-mu), 2), sigmasq):mul(-0.5))
+    exp:cdiv(torch.sqrt(sigmasq:mul(2*math.pi)))
+    return exp
+
+--    return torch.exp(-.5 * (x-mu)*(x-mu)/(sigma*sigma)) / torch.sqrt(2.0*math.pi*sigma*sigma)
 end
 
 function utils.safe_save(object, folder, name)

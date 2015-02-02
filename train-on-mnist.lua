@@ -21,7 +21,7 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 8
 opt.network_to_load = ""
-opt.network_name = "test"
+opt.network_name = "newsy"
 opt.type = "ssvb"
 --opt.cuda = true
 opt.trainSize = 6000
@@ -33,6 +33,7 @@ opt.hidden = {12}--,50,50,50}
 opt.S = 10
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
+--opt.plotlc = true
 opt.viz = true
 -- fix seed
 torch.manualSeed(1)
@@ -40,8 +41,8 @@ torch.manualSeed(1)
 opt.mu_init = 0.1
 opt.var_init = -5
 opt.pi_init = {
-    mu = 3,
-    var = 0.00001
+    mu = 0,
+    var = 0.0001
 }
 -- optimisation params
 opt.varState = {
@@ -55,7 +56,7 @@ opt.meanState = {
     updateDecay = 0.9
 }
 opt.piState = {
-    learningRate = 0.000001,
+    learningRate = 0.000000001,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -268,15 +269,22 @@ function test(dataset, type)
         parameters:copy(beta.means)
     elseif type == 'ssvb' then
         local p = parameters:narrow(1,1, opt.W)
-        p:copy(torch.cmul(beta.means, beta.pi))
---    local evalm = torch.Tensor(W):map2(beta.means, beta.vars, function(_, mu, var)
+--        p:copy(torch.cmul(beta.means, beta.pi))
+--    local evalm = torch.Tensor(opt.W):map2(beta.means, beta.vars, function(_, mu, var)
 --        return u.norm_pdf(mu,mu,var)
 --    end)
+        local evalm = u.norm_pdf(beta.means, beta.means, torch.exp(beta.lvars))
+        local evalz = u.norm_pdf(torch.Tensor(opt.W):zero(), beta.means, torch.exp(beta.lvars))
 --    local evalz = torch.Tensor(W):map2(beta.means, beta.vars, function(_, mu, var)
 --        return u.norm_pdf(0,mu,var)
 --    end)
 --print(evalm)
---        parameters:copy(torch.max(evalm, evalz))
+        local pi = torch.pow(torch.add(torch.exp(-beta.p),1),-1)-- nn.Sigmoid(beta.p)
+        evalm:cmul(pi)
+        evalz:cmul(pi)
+        local mapss = torch.gt(evalm, torch.add(pi, -1):add(evalz)):float()
+        p:copy(torch.cmul(mapss, torch.cmul(beta.means, pi)))
+--        p:copy(torch.cmul(beta.means, pi))
 --        parameters:copy(torch.cmul(beta.means, torch.pow(beta.pi,2):cmul(torch.pow(beta.vars, -1))))
     end
 
@@ -326,7 +334,6 @@ while true do
     if opt.viz then
         viz.show_parameters(beta.means, beta.vars, beta.pi, opt.hidden, opt.cuda)
     end
---    local trainaccuracy, lccc, leee = train(trainData, opt.type)
     print("TRAINACCURACY: ", trainaccuracy, trainerror)
     local testaccuracy, testerror = test(testData, opt.type)
     print("TESTACCURACY: ", testaccuracy, testerror)

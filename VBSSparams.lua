@@ -6,6 +6,7 @@
 -- To change this template use File | Settings | File Templates.
 --
 require 'randomkit'
+local viz = require('visualize')
 local u = require('utils')
 local inspect = require 'inspect'
 
@@ -13,6 +14,9 @@ local inspect = require 'inspect'
 local VBSSparams = {}
 
 function VBSSparams:init(opt)
+    self.thirdlclog = viz.graph_things(opt, 'thirdlc')
+    self.secondlc = viz.graph_things(opt, 'secondlc')
+    self.firstlc = viz.graph_things(opt, 'firstlc')
     self.W = opt.W
 
     self.means = randomkit.normal(
@@ -81,8 +85,10 @@ function VBSSparams:compute_pgrads(gradsum, opt)
     local grad = torch.log(torch.mul(torch.pow(minpi, -1), 1-self.pi_hat))
     grad:add(torch.log(torch.mul(self.pi, 1/self.pi_hat)))
     grad:mul(1/opt.B)
+    grad:add(gradsum:mul(1/opt.S))
+    grad:cmul(torch.cmul(self.pi, torch.add(self.pi, -1)))
 
-    return torch.add(gradsum:mul(1/opt.S), grad), grad
+    return grad
 end
 
 function VBSSparams:calc_LC(B)
@@ -97,6 +103,14 @@ function VBSSparams:calc_LC(B)
     local minpi = torch.add(-self.pi, 1)
     local LCthird = torch.add(torch.cmul(minpi, torch.log(minpi)), torch.cmul(self.pi, torch.log(self.pi)))
     LCthird:add(-torch.add(torch.mul(minpi, torch.log(1-self.pi_hat)), torch.mul(self.pi, torch.log(self.pi_hat))))
+    if opt.plotlc then
+    self.thirdlclog:add(LCthird:sum())
+    self.thirdlclog:plot()
+    self.secondlc:add(LCsecond:sum())
+    self.secondlc:plot()
+    self.firstlc:add(LCfirst:sum())
+    self.firstlc:plot()
+    end
 --    print("LCFirst: ", torch.sum(torch.mul(LCfirst, 1/B)))
 --    print("LCFirst: ", torch.min(torch.mul(LCfirst, 1/B)))
 --    print("LCFirst: ", torch.max(torch.mul(LCfirst, 1/B)))
@@ -203,12 +217,11 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
 
         local pz = torch.add(z, -self.pi)
         pi_gradsum:add(pz:mul(LL))
-        pi_gradsum2:add(pz)
+--        pi_gradsum2:add(pz)
         gradParameters:zero()
     end
-
 --    print((LL_sum/opt.S))
---    self.c = self.c*opt.alpha + (1-opt.alpha)*(LL_sum/opt.S)
+--    self.c = self.c*opt.alpha - (1-opt.alpha)*(LL_sum/opt.S)
 --    self.c = self.c/opt.batchSize
 --    print(self.c)
 --    pi_gradsum = pi_gradsum + pi_gradsum2:mul(self.c)
@@ -222,7 +235,7 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
 --    print(mu_gradsum:norm(), var_gradsum:norm(), pi_gradsum:norm())
 --    exit()
 --    accuracy = accuracy/opt.S
-    return torch.add(LC, LE), LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum, sm_gradsum:mul(1/opt.S)
+    return torch.add(LC, LE), LE, LC, accuracy, mu_gradsum, var_gradsum, -pi_gradsum, sm_gradsum:mul(1/opt.S)
 end
 
 
