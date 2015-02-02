@@ -88,14 +88,22 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     local LE = 0
     local accuracy = 0.0
     for i = 1, opt.S do
-        parameters:copy(self:sampleW())
+        local p = parameters:narrow(1,1, self.W)
+        local g = gradParameters:narrow(1,1, self.W)
+        local w = self:sampleW()
+        if opt.cuda then
+            w = w:cuda()
+        end
+
+        p:copy(w)
+--        parameters:copy(self:sampleW())
         outputs = model:forward(inputs)
         accuracy = accuracy + u.get_accuracy(outputs, targets)
         local df_do = criterion:backward(outputs, targets)
         model:backward(inputs, df_do)
         LE = LE + criterion:forward(outputs, targets)
-        LN_squared:add(torch.pow(gradParameters, 2))
-        gradsum:add(gradParameters)
+        LN_squared:add(torch.pow(g:float(), 2))
+        gradsum:add(g:float())
         gradParameters:zero()
     end
     LE = LE/opt.S

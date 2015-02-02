@@ -24,10 +24,11 @@ opt.network_to_load = ""
 opt.network_name = "vbwork"
 opt.type = "vb"
 --opt.cuda = true
-opt.trainSize = 6000
-opt.testSize = 1000
+opt.trainSize = 60000
+opt.testSize = 10000
+
 opt.plot = true
-opt.batchSize = 25
+opt.batchSize = 100
 opt.B = (opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}--,50,50,50}
 opt.S = 10
@@ -51,7 +52,7 @@ opt.varState = {
     updateDecay = 0.9
 }
 opt.meanState = {
-    learningRate = 0.0000002,
+    learningRate = 0.00000002,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -238,7 +239,7 @@ function train(dataset, type)
     end
 
     -- save/log current net
-    if opt.type == 'ssvb' or opt.type == 'vb' then
+    if opt.type == 'ssvb' then--or opt.type == 'vb' then
         beta:save(opt)
     end
 
@@ -266,7 +267,8 @@ function test(dataset, type)
     -- local vars
     local time = sys.clock()
     if type == 'vb' then
-        parameters:copy(beta.means)
+        local p = parameters:narrow(1,1, opt.W)
+        p:copy(beta.means)
     elseif type == 'ssvb' then
         local p = parameters:narrow(1,1, opt.W)
 
