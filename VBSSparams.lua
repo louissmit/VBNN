@@ -13,10 +13,12 @@ local inspect = require 'inspect'
 
 local VBSSparams = {}
 
+
 function VBSSparams:init(opt)
-    self.thirdlclog = viz.graph_things(opt, 'thirdlc')
+            self.thirdlclog = viz.graph_things(opt, 'thirdlc')
     self.secondlc = viz.graph_things(opt, 'secondlc')
     self.firstlc = viz.graph_things(opt, 'firstlc')
+
     self.W = opt.W
 
     self.means = randomkit.normal(
@@ -88,7 +90,7 @@ function VBSSparams:compute_pgrads(gradsum, opt)
     grad:add(gradsum:mul(1/opt.S))
     grad:cmul(torch.cmul(self.pi, torch.add(self.pi, -1)))
 
-    return grad
+    return -grad
 end
 
 function VBSSparams:calc_LC(B)
@@ -117,6 +119,7 @@ function VBSSparams:calc_LC(B)
 --    print("LCsecond: ", torch.sum(torch.mul(LCsecond, 1/B)))
 --    print("LCthird: ", torch.sum(torch.mul(LCthird, 1/B)))
     return torch.add(LCfirst, torch.add(LCsecond, LCthird)):mul(1/B)
+--    return LCthird
 end
 
 function VBSSparams:check_pgrads(gradsum, opt)
@@ -153,6 +156,9 @@ function VBSSparams:load(model_dir)
     self.W = torch.load(paths.concat(model_dir, 'opt')).W
 
     parameters:narrow(1, self.W, parameters:size(1)-self.W):copy(self.smp) --load softmax layer
+        self.thirdlclog = viz.graph_things(opt, 'thirdlc')
+    self.secondlc = viz.graph_things(opt, 'secondlc')
+    self.firstlc = viz.graph_things(opt, 'firstlc')
     return self
 end
 
@@ -184,6 +190,7 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
         mu_gradsum = mu_gradsum:cuda()
         pi_gradsum = pi_gradsum:cuda()
         pi_gradsum2 = pi_gradsum2:cuda()
+        sm_gradsum = sm_gradsum:cuda()
     end
 
     local outputs
@@ -235,7 +242,7 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
 --    print(mu_gradsum:norm(), var_gradsum:norm(), pi_gradsum:norm())
 --    exit()
 --    accuracy = accuracy/opt.S
-    return torch.add(LC, LE), LE, LC, accuracy, mu_gradsum, var_gradsum, -pi_gradsum, sm_gradsum:mul(1/opt.S)
+    return torch.add(LC, LE), LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum, sm_gradsum:mul(1/opt.S)
 end
 
 
@@ -263,7 +270,6 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
 
     local x, _, update = adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
     local var_normratio = torch.norm(update)/torch.norm(x)
---    local var_normratio = 0
 
     local x, _, update = adam(function(_) return LD, pi_grads:mul(1/opt.batchSize) end, self.p, self.piState)
     local pi_normratio = torch.norm(update)/torch.norm(x)

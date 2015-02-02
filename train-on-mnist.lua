@@ -1,4 +1,4 @@
---require 'nn'
+require 'nn'
 --require 'nnx'
 require 'optim'
 require 'gfx.js'
@@ -19,44 +19,44 @@ require 'cunn'
 --print( inspect(cutorch.getDeviceProperties(cutorch.getDevice()) ))
 local mnist = require('mnist')
 opt = {}
-opt.threads = 8
+opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "newsy"
-opt.type = "ssvb"
+opt.network_name = "vbwork"
+opt.type = "vb"
 --opt.cuda = true
 opt.trainSize = 6000
 opt.testSize = 1000
 opt.plot = true
-opt.batchSize = 10
+opt.batchSize = 25
 opt.B = (opt.trainSize/opt.batchSize)--*100
-opt.hidden = {12}--,50,50,50}
+opt.hidden = {100}--,50,50,50}
 opt.S = 10
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
 --opt.plotlc = true
-opt.viz = true
+--opt.viz = true
 -- fix seed
 torch.manualSeed(1)
 
 opt.mu_init = 0.1
-opt.var_init = -5
+opt.var_init = -7
 opt.pi_init = {
     mu = 0,
-    var = 0.0001
+    var = 0.1
 }
 -- optimisation params
 opt.varState = {
-    learningRate = 0.00002,
+    learningRate = 0.0005,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
 opt.meanState = {
-    learningRate = 0.00000002,
+    learningRate = 0.0000002,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
 opt.piState = {
-    learningRate = 0.000000001,
+    learningRate = 0.00000001,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -88,7 +88,7 @@ model = nn.Sequential()
 ------------------------------------------------------------
 -- regular 2-layer MLP
 ------------------------------------------------------------
-model:add(nn.Reshape(input_size))
+model:add(nn.View(input_size))
 model:add(nn.Linear(input_size, opt.hidden[1]))
 model:add(nn.ReLU())
 opt.W = input_size*opt.hidden[1]+opt.hidden[1]--parameters:size(1)
@@ -122,11 +122,11 @@ print("nr. of parameters: ", opt.W)
 
 if opt.network_to_load == '' then
     if opt.type == 'vb' then
-        beta = VBparams:init(W, opt)
+        beta = VBparams:init(opt.W, opt)
     elseif opt.type == 'ssvb' then
         beta = VBSSparams:init(opt)
     else
-        beta = NNparams:init(W, opt)
+        beta = NNparams:init(opt.W, opt)
     end
 else
    print('<trainer> reloading previously trained network')
@@ -269,16 +269,12 @@ function test(dataset, type)
         parameters:copy(beta.means)
     elseif type == 'ssvb' then
         local p = parameters:narrow(1,1, opt.W)
---        p:copy(torch.cmul(beta.means, beta.pi))
---    local evalm = torch.Tensor(opt.W):map2(beta.means, beta.vars, function(_, mu, var)
---        return u.norm_pdf(mu,mu,var)
---    end)
+
         local evalm = u.norm_pdf(beta.means, beta.means, torch.exp(beta.lvars))
+--        print("means", beta.means:mean())
+--        print("lvars", torch.exp(beta.lvars):mean())
+--        print(opt.W)
         local evalz = u.norm_pdf(torch.Tensor(opt.W):zero(), beta.means, torch.exp(beta.lvars))
---    local evalz = torch.Tensor(W):map2(beta.means, beta.vars, function(_, mu, var)
---        return u.norm_pdf(0,mu,var)
---    end)
---print(evalm)
         local pi = torch.pow(torch.add(torch.exp(-beta.p),1),-1)-- nn.Sigmoid(beta.p)
         evalm:cmul(pi)
         evalz:cmul(pi)
