@@ -1,18 +1,12 @@
 require 'nn'
---require 'nnx'
 require 'optim'
 require 'gfx.js'
---local _ = require ("moses")
 local inspect = require 'inspect'
 local u = require('utils')
 local viz = require('visualize')
---require 'pl'
---require 'paths'
 NNparams = require('NNparams')
 VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
---require 'rmsprop'
-require 'adam'
 require 'cutorch'
 require 'cunn'
 --torch.setdefaulttensortype('torch.CudaTensor')
@@ -20,17 +14,17 @@ require 'cunn'
 local mnist = require('mnist')
 opt = {}
 opt.threads = 1
-opt.network_to_load = ""
+opt.network_to_load = "vbwork"
 opt.network_name = "vbwork"
 opt.type = "vb"
 --opt.cuda = true
-opt.trainSize = 60000
-opt.testSize = 10000
+opt.trainSize = 100
+opt.testSize = 100
 
 opt.plot = true
-opt.batchSize = 100
+opt.batchSize = 1
 opt.B = (opt.trainSize/opt.batchSize)--*100
-opt.hidden = {100}--,50,50,50}
+opt.hidden = {12}--,50,50,50}
 opt.S = 10
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
@@ -39,20 +33,20 @@ opt.alpha = 0.8 -- NVIL
 -- fix seed
 torch.manualSeed(1)
 
-opt.mu_init = 0.1
-opt.var_init = -7
+opt.mu_init = 0.01
+opt.var_init = torch.log(0.01)
 opt.pi_init = {
     mu = 0,
     var = 0.1
 }
 -- optimisation params
 opt.varState = {
-    learningRate = 0.0005,
+    learningRate = 0.0001,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
 opt.meanState = {
-    learningRate = 0.00000002,
+    learningRate = 0.000000002,
     momentumDecay = 0.1,
     updateDecay = 0.9
 }
@@ -105,19 +99,9 @@ if opt.cuda then
     model:cuda()
     criterion:cuda()
 end
-parameters, gradParameters = model:getParameters()
-
--- if opt.cuda then
---     unwrapped_model:cuda()
---     model = nn.Sequential()
---     model:add(nn.Copy('torch.FloatTensor', 'torch.CudaTensor'))
---     model:add(unwrapped_model)
---     model:add(nn.Copy('torch.CudaTensor', 'torch.FloatTensor'))
--- else
---     model = unwrapped_model
--- end
 
 -- retrieve parameters and gradients
+parameters, gradParameters = model:getParameters()
 
 print("nr. of parameters: ", opt.W)
 
@@ -133,18 +117,14 @@ else
    print('<trainer> reloading previously trained network')
     if opt.type == 'ssvb' then
         beta = VBSSparams:load(opt.network_to_load)
+    elseif opt.type == 'vb' then
+        beta = VBparams:load(opt.network_to_load)
     end
 end
 
 -- verbose
 print('<mnist> using model:')
 print(model)
-
-----------------------------------------------------------------------
--- loss function: negative log-likelihood
---
-
-
 
 
 ----------------------------------------------------------------------
@@ -161,8 +141,6 @@ u.normalize(testData.inputs)
 ----------------------------------------------------------------------
 -- define training and testing functions
 --
-
-
 
 -- training function
 function train(dataset, type)
@@ -239,7 +217,7 @@ function train(dataset, type)
     end
 
     -- save/log current net
-    if opt.type == 'ssvb' then--or opt.type == 'vb' then
+    if opt.type == 'ssvb' or opt.type == 'vb' then
         beta:save(opt)
     end
 
@@ -273,9 +251,6 @@ function test(dataset, type)
         local p = parameters:narrow(1,1, opt.W)
 
         local evalm = u.norm_pdf(beta.means, beta.means, torch.exp(beta.lvars))
---        print("means", beta.means:mean())
---        print("lvars", torch.exp(beta.lvars):mean())
---        print(opt.W)
         local evalz = u.norm_pdf(torch.Tensor(opt.W):zero(), beta.means, torch.exp(beta.lvars))
         local pi = torch.pow(torch.add(torch.exp(-beta.p),1),-1)-- nn.Sigmoid(beta.p)
         evalm:cmul(pi)
@@ -283,7 +258,6 @@ function test(dataset, type)
         local mapss = torch.gt(evalm, torch.add(pi, -1):add(evalz)):float()
         p:copy(torch.cmul(mapss, torch.cmul(beta.means, pi)))
 --        p:copy(torch.cmul(beta.means, pi))
---        parameters:copy(torch.cmul(beta.means, torch.pow(beta.pi,2):cmul(torch.pow(beta.vars, -1))))
     end
 
     -- test over given dataset
@@ -343,7 +317,6 @@ while true do
         leLogger:add({['LE'] = le})
         lcLogger:add({['LC'] = lc})
     end
-
 
     -- plot errors
     if opt.plot then

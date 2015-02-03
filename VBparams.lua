@@ -5,7 +5,6 @@
 -- Time: 1:34 PM
 -- To change this template use File | Settings | File Templates.
 --
-require 'torch'
 require 'randomkit'
 local u = require('utils')
 local inspect = require 'inspect'
@@ -14,21 +13,45 @@ local VBparams = {}
 
 function VBparams:init(W, opt)
     self.W = W
-    self.lvars = torch.Tensor(W):fill(-5)
---    self.lvars = torch.Tensor(W):apply(function(_)
---        return randomkit.uniform(-10, -5)
---        return torch.log(randomkit.normal(0.001, 0.01))
---    end)
+    self.lvars = torch.Tensor(W):fill(opt.var_init)
     self.means = torch.Tensor(W):apply(function(_)
-        return randomkit.normal(0, 0.1)
+        return randomkit.normal(0, opt.mu_init)
     end)
---    self.mu_hat = 0.0
---    self.var_hat = 0.005625
+    self.smp = parameters:narrow(1, self.W, parameters:size(1)-self.W) -- softmax layer params
+
     -- optimisation state
     self.varState = opt.varState
     self.meanState = opt.meanState
-    self.update_counter = 0
+    self.smState = opt.smState
     return self
+end
+
+function VBparams:load(model_dir)
+    local dir = paths.concat(model_dir, 'parameters')
+    self.means = torch.load(paths.concat(dir, 'means'))
+    self.lvars = torch.load(paths.concat(dir, 'lvars'))
+    self.smp = torch.load(paths.concat(dir, 'smp'))
+    dir = paths.concat(model_dir, 'optimstate')
+    self.meanState = torch.load(paths.concat(dir, 'mean'))
+    self.varState = torch.load(paths.concat(dir, 'var'))
+    self.smState = torch.load(paths.concat(dir, 'smp'))
+    self.W = torch.load(paths.concat(model_dir, 'opt')).W
+    print(self.W)
+    return self
+end
+
+function VBparams:save(opt)
+    u.safe_save(opt, opt.network_name, 'opt')
+    local dir = paths.concat(opt.network_name, 'parameters')
+    os.execute('mkdir -p ' .. dir)
+    u.safe_save(self.means, dir, 'means')
+    u.safe_save(self.lvars, dir, 'lvars')
+    u.safe_save(self.smp, dir, 'smp')
+    local dir = paths.concat(opt.network_name, 'optimstate')
+    os.execute('mkdir ' .. dir)
+    u.safe_save(self.meanState, dir, 'mean')
+    u.safe_save(self.varState, dir, 'var')
+    u.safe_save(self.smState, dir, 'smp')
 end
 
 function VBparams:sampleW()
@@ -82,8 +105,10 @@ function VBparams:check_vargrads(LN_squared, opt)
 end
 
 function VBparams:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
+    local smsize = parameters:size(1)-self.W
     local LN_squared = torch.Tensor(self.W):zero()
     local gradsum = torch.Tensor(self.W):zero()
+    local sm_gradsum = torch.Tensor(smsize):zero()
     local outputs
     local LE = 0
     local accuracy = 0.0
@@ -96,17 +121,21 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
         end
 
         p:copy(w)
---        parameters:copy(self:sampleW())
         outputs = model:forward(inputs)
+        LE = LE + criterion:forward(outputs, targets)
         accuracy = accuracy + u.get_accuracy(outputs, targets)
+
         local df_do = criterion:backward(outputs, targets)
         model:backward(inputs, df_do)
-        LE = LE + criterion:forward(outputs, targets)
+
         LN_squared:add(torch.pow(g:float(), 2))
         gradsum:add(g:float())
+        local smg = gradParameters:narrow(1, self.W, smsize)
+        sm_gradsum:add(smg)
         gradParameters:zero()
     end
     LE = LE/opt.S
+    local sm_grad= sm_gradsum:mul(1/opt.S)
     accuracy = accuracy/opt.S
 
     -- update optimal prior alpha
@@ -118,24 +147,22 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     local LC = self:calc_LC(opt.B)
     print("LC: ", LC:sum())
     print("LE: ", LE)
---    local grad, numgrad = self:check_vargrads(LN_squared, opt)
---    print('minvargradcheck: ', torch.min(grad), torch.min(numgrad))
---    print('maxvargradcheck: ', torch.max(grad), torch.max(numgrad))
---    print('vargradcheck: ', torch.max(torch.abs(torch.add(grad, -numgrad))))
---    exit()
 
     local LD = LE + torch.sum(LC)
 
-    --            print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
---                print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
-    local x, _, update = adam(function(_) return LD, vb_mugrads:mul(1/opt.batchSize) end, self.means, self.meanState)
-
+    local x, _, update = optim.adam(function(_) return LD, vb_mugrads:mul(1/opt.batchSize) end, self.means, self.meanState)
     local mu_normratio = torch.norm(update)/torch.norm(x)
 
-    local x, _, update = adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
+    print(sm_grad:size(1))
+    print(self.smp:size(1))
+    local x, _, update = optim.adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
     local var_normratio = torch.norm(update)/torch.norm(x)
 --    local var_normratio = 0
-    if opt.normcheck and (self.update_counter % 1)==0 then
+
+    local x, _, update = optim.adam(
+        function(_) return _, sm_grad:mul(1/opt.batchSize) end,
+            self.smp, self.smState)
+    if opt.normcheck then
 --        print("MU: ", mu_normratio)
 --        print("VAR: ", var_normratio)
         nrlogger:style({['mu'] = '-',['var'] = '-'})
@@ -143,8 +170,6 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
         nrlogger:plot()
     end
 
-
-    self.update_counter = self.update_counter + 1
     return torch.sum(LC), LE, accuracy
 end
 

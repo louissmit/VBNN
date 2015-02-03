@@ -25,7 +25,7 @@ function NNparams:train(inputs, targets, model, criterion, parameters, gradParam
     model:backward(inputs, df_do)
     local error = criterion:forward(outputs, targets)
     local accuracy = u.get_accuracy(outputs, targets)
-    local x, _, update = adam(function(_) return error, gradParameters:mul(1/opt.batchSize) end, parameters, self.optimState)
+    local x, _, update = optim.adam(function(_) return error, gradParameters:mul(1/opt.batchSize) end, parameters, self.optimState)
 
     if opt.normcheck and (self.update_counter % 10)== 0 then
         --        print("MU: ", mu_normratio)
