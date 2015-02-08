@@ -41,6 +41,18 @@ function utils.normalize(data)
    return mean, std
 end
 
+function utils.select_data(trainData, indices)
+    local new_trainData = {}
+    local ds_size = trainData.inputs:size()
+    new_trainData.inputs = torch.Tensor(#indices, ds_size[2], ds_size[3])
+    new_trainData.targets = torch.Tensor(#indices)
+    for k, v in pairs(indices) do
+        new_trainData.inputs[k] = trainData.inputs[v]
+        new_trainData.targets[k] = trainData.targets[v]
+    end
+    return new_trainData
+end
+
 function utils.num_grad(to_check, func)
     local epsilon = 0.000001--2*torch.sqrt(1e-20)*(1+torch.norm(to_check))
     print("epsilon: ", epsilon)

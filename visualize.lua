@@ -19,51 +19,46 @@ function split(string)
     return res
 end
 
-function viz.show_parameters(weights, vars, pi, hidden, cuda)
-    local weights = torch.Tensor(opt.W):copy(weights):resize(hidden[1], 28, 28)
-    local vars = torch.Tensor(opt.W):copy(vars):resize(hidden[1], 28, 28)
-    local pi = torch.Tensor(opt.W):copy(pi):resize(hidden[1], 28, 28)
+function viz.show_tensors(tensors, dim, id)
+    local tensor_imgs = {}
+    for i = 1, dim do
+        table.insert(tensor_imgs, tensors[i])
+    end
+    gfx.image(tensor_imgs,{zoom=3.5, legend=id, win=id})
+end
+
+function viz.show_input_parameters(params, size, id, opt)
+    local weights = torch.Tensor(size):copy(params):resize(opt.hidden[1], 28, 28)
     if cuda then
         weights = weights:float()
-        vars = vars:float()
-        pi = pi:float()
     end
-
-    local meanimgs = {}
-    local varimgs = {}
-    local piimgs = {}
-    for i = 1, hidden[1] do
-        table.insert(meanimgs, weights[i])
-        if vars then
-            table.insert(varimgs, vars[i])
-        end
-        if pi then
-            table.insert(piimgs, pi[i])
-        end
-    end
-
+    viz.show_tensors(weights, opt.hidden[1], id)
     print("weights:min(): ", torch.min(weights))
     print("weights:max(): ", torch.max(weights))
+end
 
---    gfx.image(meanimgs,{zoom=3.5, legend='means', min=-0.8, max=0.8, win='means', refresh=true})
-    gfx.image(meanimgs,{zoom=3.5, legend='means',  win='means', refresh=true})
-    if vars then
---        gfx.image(varimgs,{zoom=3.5, legend='vars', min=0.0, max=0.04, win='vars', refresh=true})
-        gfx.image(varimgs,{zoom=3.5, legend='vars', win='vars', refresh=true})
+function viz.show_images(set, indices, id)
+    local img_size =784
+
+    local tensor_result = torch.Tensor(#indices*img_size):zero()
+    local prev = torch.Tensor(img_size):zero()
+    local result = {}
+    for k, i in pairs(indices) do
+--        print(set.inputs:select(1,i):mean())
+--        print(set.inputs:select(1,i):var())
+        local img_tens = set.inputs:select(1,i)
+
+--        img_tens:add(-img_tens:min())
+--        img_tens:div(img_tens:max())
+--        print(img_tens:min(), img_tens:max())
+--        img_tens:resize(img_size)
+        local sub = tensor_result:narrow(1, (k-1)*img_size+1, img_size)
+        sub:copy(img_tens)
+        table.insert(result, img_tens)
+        prev = img_tens
     end
-    if pi then
---        gfx.image(piimgs,{zoom=3.5, legend='pi', min=0.0, max=1.0, win='pi', refresh=true})
-        gfx.image(piimgs,{zoom=3.5, legend='pi', win='pi', refresh=true})
-    end
-
-        print("vars:min(): ", torch.min(vars))
-        print("vars:max(): ", torch.max(vars))
-
-    --   gfx.chart(data, {
-    --      chart = 'scatter', -- or: bar, stacked, multibar, scatter
-    --      width = 600,
-    --      height = 450,
-    --   })
+--    viz.show_tensors(result, #indices, id)
+    return tensor_result
 end
 
 function viz.show_uncertainty(output, sample, means, vars, hidden, label)

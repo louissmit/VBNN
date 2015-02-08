@@ -7,16 +7,16 @@ local viz = require('visualize')
 NNparams = require('NNparams')
 VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
-require 'cutorch'
-require 'cunn'
+require 'torch'
+--require 'cunn'
 --torch.setdefaulttensortype('torch.CudaTensor')
 --print( inspect(cutorch.getDeviceProperties(cutorch.getDevice()) ))
 local mnist = require('mnist')
 opt = {}
 opt.threads = 1
-opt.network_to_load = "vbwork"
-opt.network_name = "vbwork"
-opt.type = "vb"
+opt.network_to_load = ""
+opt.network_name = "ssvb100t1"
+opt.type = "ssvb"
 --opt.cuda = true
 opt.trainSize = 100
 opt.testSize = 100
@@ -24,41 +24,46 @@ opt.testSize = 100
 opt.plot = true
 opt.batchSize = 1
 opt.B = (opt.trainSize/opt.batchSize)--*100
-opt.hidden = {12}--,50,50,50}
-opt.S = 10
+opt.hidden = {100}
+opt.S = 5
 opt.alpha = 0.8 -- NVIL
---opt.normcheck = true
+opt.normcheck = true
 --opt.plotlc = true
 --opt.viz = true
 -- fix seed
 torch.manualSeed(1)
 
-opt.mu_init = 0.01
-opt.var_init = torch.log(0.01)
+opt.mu_init = 0.0001
+opt.var_init = 0.01
 opt.pi_init = {
     mu = 0,
-    var = 0.1
+    var = 0.001
 }
 -- optimisation params
-opt.varState = {
+opt.levarState = {
     learningRate = 0.0001,
-    momentumDecay = 0.1,
-    updateDecay = 0.9
+    learningRateDecay = 0.001
 }
-opt.meanState = {
-    learningRate = 0.000000002,
-    momentumDecay = 0.1,
-    updateDecay = 0.9
+opt.lcvarState = {
+    learningRate = 0.00001,
+    learningRateDecay = 0.001
 }
-opt.piState = {
+opt.lemeanState = {
     learningRate = 0.00000001,
-    momentumDecay = 0.1,
-    updateDecay = 0.9
+    learningRateDecay = 0.01
+}
+opt.lcmeanState = {
+    learningRate = 0.000000001,
+    learningRateDecay = 0.01
+}
+opt.lepiState = {
+    learningRate = 0.000000001,
+}
+opt.lcpiState = {
+    learningRate = 0.000000001,
 }
 opt.smState = {
     learningRate = 0.00000002,
-    momentumDecay = 0.1,
-    updateDecay = 0.9
 }
 
 -- threads
@@ -103,15 +108,15 @@ end
 -- retrieve parameters and gradients
 parameters, gradParameters = model:getParameters()
 
-print("nr. of parameters: ", opt.W)
+print("nr. of parameters: ", parameters:size(1))
 
 if opt.network_to_load == '' then
     if opt.type == 'vb' then
         beta = VBparams:init(opt.W, opt)
     elseif opt.type == 'ssvb' then
-        beta = VBSSparams:init(opt)
+        beta = VBSSparams:init(opt.W, opt)
     else
-        beta = NNparams:init(opt.W, opt)
+        beta = NNparams:init(parameters, opt)
     end
 else
    print('<trainer> reloading previously trained network')
@@ -119,6 +124,8 @@ else
         beta = VBSSparams:load(opt.network_to_load)
     elseif opt.type == 'vb' then
         beta = VBparams:load(opt.network_to_load)
+    else
+        beta = NNparams:load(opt.network_to_load)
     end
 end
 
@@ -135,6 +142,7 @@ trainData = mnist.traindataset()
 testData = mnist.testdataset()
 trainData = {inputs=trainData.data:type('torch.FloatTensor'), targets=trainData.label}
 u.normalize(trainData.inputs)
+--trainData = u.select_data(trainData, {1,2,3,13,15,16,17,18,19,20})
 testData = {inputs=testData.data:type('torch.FloatTensor'), targets=testData.label}
 u.normalize(testData.inputs)
 
@@ -186,8 +194,8 @@ function train(dataset, type)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
---            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
---            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
+            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
         else
             local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             error = error + err
@@ -217,9 +225,7 @@ function train(dataset, type)
     end
 
     -- save/log current net
-    if opt.type == 'ssvb' or opt.type == 'vb' then
-        beta:save(opt)
-    end
+    beta:save(opt)
 
     -- next epoch
     epoch = epoch + 1
@@ -297,14 +303,29 @@ errorLogger = optim.Logger(paths.concat(opt.network_name, 'error.log'))
 leLogger = optim.Logger(paths.concat(opt.network_name, 'le.log'))
 lcLogger = optim.Logger(paths.concat(opt.network_name, 'lc.log'))
 nrlogger = optim.Logger(paths.concat(opt.network_name, 'nr.log'))
-
+--    local init = viz.show_images(trainData, torch.totable(torch.range(1,10)), 'weights')
+--    init:add(-init:mean())
+--    init:div(100*init:var())
+--    local inputparams = parameters:narrow(1,1,10*784)
+--    inputparams:copy(init)
+--    print(inputparams:min(), inputparams:max())
+--    print(inputparams:mean(), inputparams:var())
 while true do
 --    viz.show_uncertainties(model, parameters, testData, beta.means, beta.vars, opt.hidden)
+--    local init = viz.show_images(trainData, {1,2,3,13,15,16,17,18,19,20})
+
+--    viz.show_input_parameters(parameters, parameters:size(), opt)
+--    model:forward(trainData.inputs[5])
+--    print(model:get(2).output)
+--    viz.show_tensors(model:get(2).output, opt.hidden[1], 'activations')
 --    break
     -- train/test
     local trainaccuracy, trainerror, lc, le = train(trainData, opt.type)
     if opt.viz then
-        viz.show_parameters(beta.means, beta.vars, beta.pi, opt.hidden, opt.cuda)
+--        viz.show_input_parameters(parameters, parameters:size(), opt)
+        viz.show_input_parameters(beta.means, beta.means:size(), 'means', opt)
+        viz.show_input_parameters(beta.lvars, beta.lvars:size(), 'vars', opt)
+--        viz.show_parameters(beta.means, beta.vars, beta.pi, opt.hidden, opt.cuda)
     end
     print("TRAINACCURACY: ", trainaccuracy, trainerror)
     local testaccuracy, testerror = test(testData, opt.type)
@@ -312,7 +333,7 @@ while true do
 
 --    viz.graph_things(accuracies)
     accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy }
-    errorLogger:add{['LL (train set)'] = trainerror, ['LL (test set)'] = testerror }
+    errorLogger:add{['LL (train set)'] = le or trainerror, ['LL (test set)'] = testerror }
     if opt.type == 'ssvb' or opt.type == 'vb' then
         leLogger:add({['LE'] = le})
         lcLogger:add({['LC'] = lc})

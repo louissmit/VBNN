@@ -13,15 +13,17 @@ local VBparams = {}
 
 function VBparams:init(W, opt)
     self.W = W
-    self.lvars = torch.Tensor(W):fill(opt.var_init)
-    self.means = torch.Tensor(W):apply(function(_)
-        return randomkit.normal(0, opt.mu_init)
-    end)
+    self.lvars = torch.Tensor(W):fill(torch.log(opt.var_init))
+    self.means = randomkit.normal(
+        torch.Tensor(W):zero(),
+        torch.Tensor(W):fill(opt.mu_init)):float()
     self.smp = parameters:narrow(1, self.W, parameters:size(1)-self.W) -- softmax layer params
 
     -- optimisation state
-    self.varState = opt.varState
-    self.meanState = opt.meanState
+    self.levarState = opt.levarState
+    self.lcvarState = opt.lcvarState
+    self.lemeanState = opt.lemeanState
+    self.lcmeanState = opt.lcmeanState
     self.smState = opt.smState
     return self
 end
@@ -60,48 +62,38 @@ end
 
 function VBparams:compute_prior()
     self.mu_hat = (1/self.W)*torch.sum(self.means)
+--    self.mu_hat = 0
     local vars = torch.exp(self.lvars)
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
     self.var_hat = (1/self.W)*torch.sum(torch.add(vars, self.mu_sqe))
+--    self.var_hat = 0.0001
     return self.mu_hat, self.var_hat
 end
 
 function VBparams:compute_mugrads(gradsum, opt)
     local lcg = torch.add(self.means, -self.mu_hat):mul(1/(opt.B*self.var_hat))
-    return torch.add(lcg, torch.mul(gradsum, 1/opt.S)), lcg
+    return gradsum:div(opt.S), lcg
 end
 
 function VBparams:compute_vargrads(LN_squared, opt)
     local vars = torch.exp(self.lvars)
     local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):mul(1/opt.B)
-    return torch.add(lcg, LN_squared:mul(1/opt.S)):mul(1/2):cmul(vars), lcg:mul(1/2):cmul(vars)
+    return LN_squared:mul(1/opt.S):mul(1/2):cmul(vars), lcg:mul(1/2):cmul(vars)
 end
 
-function VBparams:calc_LC(B)
+function VBparams:calc_LC(opt)
     local vars = torch.exp(self.lvars)
 --    print(torch.mean(torch.log(torch.sqrt(vars))))
 --    print(torch.var(torch.log(torch.sqrt(vars))))
 --    print(torch.log(torch.sqrt(self.var_hat)))
     local LCfirst = torch.add(-torch.log(torch.sqrt(vars)), torch.log(torch.sqrt(self.var_hat)))
     local LCsecond = torch.add(self.mu_sqe, torch.add(vars, -self.var_hat)):mul(1/(2*self.var_hat))
---    print("LCFirst: ", torch.sum(torch.mul(LCfirst, 1/B)))
---    print("LCsecond: ", torch.sum(torch.mul(LCsecond, 1/B)))
-    return torch.add(LCfirst, LCsecond):mul(1/B)
-end
-
-function VBparams:check_mugrads(gradsum, opt)
-    local numgrad = u.num_grad(self.means, function()
-        self:compute_prior()
-        return self:calc_LC(opt.B) end)
-    local le_grad, lc_grad = self:compute_mugrads(gradsum, opt)
-    return lc_grad, numgrad
-end
-
-function VBparams:check_vargrads(LN_squared, opt)
-    local numgrad = u.num_grad(self.lvars, function() return self:calc_LC(opt.B) end)
-    local gle, glc = self:compute_vargrads(LN_squared, opt)
-    return glc, numgrad
+--    print("LCFirst: ", torch.sum(torch.div(LCfirst, opt.B)))
+--    print("LCsecond: ", torch.sum(torch.div(self.mu_sqe, 2*self.var_hat):div(opt.B)))
+--    print("LCthird: ", torch.sum(torch.div(vars, 2*self.var_hat):div(opt.B)))
+--    print('LCfourth: ', -opt.W/(2*opt.B))
+    return torch.add(LCfirst, LCsecond):mul(1/opt.B)
 end
 
 function VBparams:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
@@ -140,24 +132,27 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
 
     -- update optimal prior alpha
     local mu_hat, var_hat = self:compute_prior()
-    local vb_mugrads, mlcg = self:compute_mugrads(gradsum, opt)
+    local mleg, mlcg = self:compute_mugrads(gradsum, opt)
 
-    local vb_vargrads, vlcg = self:compute_vargrads(LN_squared, opt)
+    local vleg, vlcg = self:compute_vargrads(LN_squared, opt)
 
-    local LC = self:calc_LC(opt.B)
+    local LC = self:calc_LC(opt)
     print("LC: ", LC:sum())
     print("LE: ", LE)
 
     local LD = LE + torch.sum(LC)
 
-    local x, _, update = optim.adam(function(_) return LD, vb_mugrads:mul(1/opt.batchSize) end, self.means, self.meanState)
-    local mu_normratio = torch.norm(update)/torch.norm(x)
+    local x, _, update = optim.adam(function(_) return LD, mleg:mul(1/opt.batchSize) end, self.means, self.lemeanState)
+    local mule_normratio = torch.norm(update)/torch.norm(x)
+    local x, _, update = optim.adam(function(_) return LD, mlcg:mul(1/opt.batchSize) end, self.means, self.lcmeanState)
+    local mulc_normratio = torch.norm(update)/torch.norm(x)
 
-    print(sm_grad:size(1))
-    print(self.smp:size(1))
-    local x, _, update = optim.adam(function(_) return LD, vb_vargrads:mul(1/opt.batchSize) end, self.lvars, self.varState)
-    local var_normratio = torch.norm(update)/torch.norm(x)
---    local var_normratio = 0
+
+    local x, _, update = optim.adam(function(_) return LD, vleg:mul(1/opt.batchSize) end, self.lvars, self.levarState)
+    local varle_normratio = torch.norm(update)/torch.norm(x)
+    local x, _, update = optim.adam(function(_) return LD, vlcg:mul(1/opt.batchSize) end, self.lvars, self.lcvarState)
+    local varlc_normratio = torch.norm(update)/torch.norm(x)
+    local mule_normratio = 0
 
     local x, _, update = optim.adam(
         function(_) return _, sm_grad:mul(1/opt.batchSize) end,
@@ -165,8 +160,10 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     if opt.normcheck then
 --        print("MU: ", mu_normratio)
 --        print("VAR: ", var_normratio)
-        nrlogger:style({['mu'] = '-',['var'] = '-'})
-        nrlogger:add{['mu'] = mu_normratio, ['var'] = var_normratio}
+        nrlogger:style({['mule'] = '-',['mulc'] = '-',['varle'] = '-',['varlc'] = '-'})
+--        nrlogger:style({['mu'] = '-',['var'] = '-'})
+--        nrlogger:add{['mu'] = mu_normratio, ['var'] = var_normratio}
+        nrlogger:add{['mule'] = mule_normratio, ['mulc'] = mulc_normratio,['varle'] = varle_normratio,['varlc'] = varlc_normratio}
         nrlogger:plot()
     end
 

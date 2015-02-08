@@ -11,14 +11,36 @@ local inspect = require 'inspect'
 
 local NNparams = {}
 
-function NNparams:init(W, opt)
-    self.optimState = opt.meanState
+function NNparams:init(parameters, opt)
+--    local size = parameters:size(1)
+--    local newp = torch.Tensor(size)
+--    randomkit.normal(newp, 0, 0.1)
+--    parameters:copy(newp)
+    self.optimState = opt.lemeanState
     self.update_counter = 0
+    self.parameters = parameters
+
     return self
+end
+
+function NNparams:load(network_to_load)
+    self.update_counter = 0
+    parameters:copy(torch.load(paths.concat(network_to_load, 'parameters')))
+    self.optimState = torch.load(paths.concat(network_to_load, 'optimstate'))
+    return self
+end
+
+function NNparams:save(opt)
+    u.safe_save(parameters, opt.network_name, 'parameters')
+    u.safe_save(self.optimState, opt.network_name, 'optimstate')
 end
 
 function NNparams:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
     local outputs = model:forward(inputs)
+--    print(model:get(4).output)
+--    local p = parameters:narrow(1, parameters:size(1)-110,110)
+--    local g = gradParameters:narrow(1, parameters:size(1)-110,110)
+--    exit()
 
     -- estimate df/dW
     local df_do = criterion:backward(outputs, targets)
