@@ -49,7 +49,6 @@ function NNparams:train(inputs, targets, model, criterion, parameters, gradParam
     local accuracy = u.get_accuracy(outputs, targets)
     local x, _, update = optim.adam(function(_) return error, gradParameters:mul(1/opt.batchSize) end, parameters, self.optimState)
     local normratio = torch.norm(update)/torch.norm(x)
-    print(normratio)
 
     if opt.normcheck and (self.update_counter % 10)== 0 then
         nrlogger:add{['w'] = normratio}

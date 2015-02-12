@@ -15,15 +15,15 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "vbproper2"
-opt.type = "vb"
+opt.network_name = "sadfasdf"
+opt.type = ""
 --opt.cuda = true
-opt.trainSize = 100
+opt.trainSize = 50
 opt.testSize = 1000
 
 opt.plot = true
 opt.batchSize = 1
-opt.B = (opt.trainSize/opt.batchSize)--*100
+opt.B = 1--(opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}
 opt.S = 10
 opt.alpha = 0.8 -- NVIL
@@ -72,23 +72,36 @@ print('<torch> set nb of threads to ' .. torch.getnumthreads())
 
 torch.setdefaulttensortype('torch.FloatTensor')
 
+----------------------------------------------------------------------
+-- preprocess dataset
+--
+
+
+data = torch.load('bacteria.torch')
+u.normalize(data.inputs)
+data.targets = data.targets:byte()
+indices = torch.randperm(data.inputs:size(1))
+opt.testSize = data.inputs:size(1)-opt.trainSize
+
+train_indices = indices:narrow(1, 1, opt.trainSize):totable()
+test_indices = indices:narrow(1, opt.trainSize, opt.testSize):totable()
+
 
 ----------------------------------------------------------------------
 -- define model to train
 -- on the 10-class classification problem
 --
-classes = {'0','1','2','3','4','5','6','7','8','9'}
+classes = {'0','1','2'}
 
 -- geometry: width and height of input images
-geometry = {28,28}
-local input_size = geometry[1]*geometry[2]
+local input_size = data.inputs:size(2)
 
 -- define model to train
 model = nn.Sequential()
 ------------------------------------------------------------
 -- regular 2-layer MLP
 ------------------------------------------------------------
-model:add(nn.Reshape(input_size))
+--model:add(nn.Reshape(input_size))
 model:add(nn.Linear(input_size, opt.hidden[1]))
 --model:get(2).bias:zero()
 --model:get(2):reset(opt.var_init)
@@ -143,17 +156,7 @@ print('<mnist> using model:')
 --exit()
 
 
-----------------------------------------------------------------------
--- preprocess dataset
---
 
-trainData = mnist.traindataset()
-testData = mnist.testdataset()
-trainData = {inputs=trainData.data:type('torch.FloatTensor'), targets=trainData.label}
-u.normalize(trainData.inputs)
---trainData = u.select_data(trainData, {1,2,3,13,15,16,17,18,19,20})
-testData = {inputs=testData.data:type('torch.FloatTensor'), targets=testData.label}
-u.normalize(testData.inputs)
 
 ----------------------------------------------------------------------
 -- define training and testing functions
@@ -176,9 +179,11 @@ function train(dataset, type)
     -- do one epoch
     print('<trainer> on training set:')
     print("<trainer> online epoch # " .. epoch .. ' [batchSize = ' .. opt.batchSize .. ']')
-    for t = 1, opt.trainSize,opt.batchSize do
-        --      local batchtime = sys.clock()
-        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, opt.trainSize, geometry)
+    for t, i in pairs(train_indices) do
+
+    --      local batchtime = sys.clock()
+        local inputs = data.inputs[i]
+        local targets = data.targets[i][1]+1
         if opt.cuda then
             inputs = inputs:cuda()
             targets = targets:cuda()
@@ -284,11 +289,11 @@ function test(dataset, type)
 
     -- test over given dataset
     print('<trainer> on testing Set:')
-    for t = 1,opt.testSize,opt.batchSize do
-        -- disp progress
-        xlua.progress(t, opt.testSize)
+    for t, i in pairs(test_indices) do
 
-        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, opt.testSize, geometry)
+    --      local batchtime = sys.clock()
+        local inputs = data.inputs[i]
+        local targets = data.targets[i]+1
         if opt.cuda then
             inputs = inputs:cuda()
             targets = targets:cuda()
@@ -297,8 +302,10 @@ function test(dataset, type)
         -- test samples
         local preds = model:forward(inputs)
 --        print(torch.gt(model:get(3).output, 0):sum())
-        accuracy = accuracy + u.get_accuracy(preds, targets)
-        local err = criterion:forward(preds, targets)
+--        accuracy = accuracy + u.get_accuracy(preds, targets)
+        local err = criterion:forward(preds, targets[1])
+    print(err)
+
         avg_error = avg_error + err
 
     end
