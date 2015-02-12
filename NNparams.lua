@@ -12,10 +12,10 @@ local inspect = require 'inspect'
 local NNparams = {}
 
 function NNparams:init(parameters, opt)
---    local size = parameters:size(1)
---    local newp = torch.Tensor(size)
---    randomkit.normal(newp, 0, 0.1)
---    parameters:copy(newp)
+    local size = parameters:size(1)
+    local newp = torch.Tensor(opt.W)
+    randomkit.normal(newp, 0, torch.sqrt(opt.var_init))
+    parameters:narrow(1, 1, opt.W):copy(newp)
     self.optimState = opt.lemeanState
     self.update_counter = 0
     self.parameters = parameters
@@ -48,11 +48,10 @@ function NNparams:train(inputs, targets, model, criterion, parameters, gradParam
     local error = criterion:forward(outputs, targets)
     local accuracy = u.get_accuracy(outputs, targets)
     local x, _, update = optim.adam(function(_) return error, gradParameters:mul(1/opt.batchSize) end, parameters, self.optimState)
+    local normratio = torch.norm(update)/torch.norm(x)
+    print(normratio)
 
     if opt.normcheck and (self.update_counter % 10)== 0 then
-        --        print("MU: ", mu_normratio)
-        --        print("VAR: ", var_normratio)
-        local normratio = torch.norm(update)/torch.norm(x)
         nrlogger:add{['w'] = normratio}
         nrlogger:style({['w'] = '-'})
         nrlogger:plot()
