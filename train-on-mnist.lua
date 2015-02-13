@@ -41,7 +41,7 @@ opt.pi_init = {
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.00000002,
+    learningRate = 0.00001,
 --    learningRateDecay = 0.01
 }
 opt.lcvarState = {
@@ -50,14 +50,14 @@ opt.lcvarState = {
 }
 opt.lemeanState = {
     learningRate = 0.00000001,
---    learningRateDecay = 0.01
+--    learningRateDecay = 0.001
 }
 opt.lcmeanState = {
     learningRate = 0.000000001,
     learningRateDecay = 0.01
 }
 opt.lepiState = {
-    learningRate = 0.0000001,
+    learningRate = 0.00000001,
 }
 opt.lcpiState = {
     learningRate = 0.000001,
@@ -183,7 +183,7 @@ function train(dataset, type)
 
     --      local batchtime = sys.clock()
         local inputs = data.inputs[i]
-        local targets = data.targets[i][1]+1
+        local targets = data.targets[i]+1
         if opt.cuda then
             inputs = inputs:cuda()
             targets = targets:cuda()
