@@ -112,15 +112,13 @@ function VBSSparams:compute_prior(B)
 end
 
 function VBSSparams:compute_mugrads(gradsum, opt)
-    local lcg = torch.add(self.means, -self.mu_hat):mul(1/(opt.B*self.var_hat))
---    return torch.add(lcg, torch.mul(gradsum, 1/opt.S)), lcg
+    local lcg = torch.add(self.means, -self.mu_hat):div(opt.B*self.var_hat)
     return gradsum:div(opt.S), lcg
 end
 
 function VBSSparams:compute_vargrads(gradsum, opt)
-    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):div(2*opt.B):cdiv(self.lvars)
-    return gradsum:div(2*opt.S):cdiv(self.lvars), lcg
---    return torch.add(lcg, gradsum:mul(1/opt.S)):mul(1/2), lcg:mul(1/2)
+    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):div(2*opt.B)
+    return gradsum:div(2*opt.S):cmul(self.vars), lcg:cmul(self.vars)
 --    return torch.add(lcg, gradsum:mul(1/(2*opt.S)):cmul(torch.pow(self.stdv, -1))), lcg:mul(1/2):cmul(self.vars)
 end
 
@@ -136,12 +134,7 @@ function VBSSparams:compute_pgrads(gradsum, opt)
 end
 
 function VBSSparams:calc_LC(B)
---    print("stdv", torch.mean(self.stdv))
---    print("varhat", torch.sqrt(self.var_hat))
     local LCfirst = torch.add(-torch.log(self.stdv), torch.log(torch.sqrt(self.var_hat)))
---    local diffvar = torch.add(self.vars, -self.var_hat):mul(1/(2*self.var_hat))
---    print(torch.mean(diffvar))
---    print(torch.mean(self.mu_sqe))
     local LCsecond = torch.add(self.mu_sqe, torch.add(self.vars, -self.var_hat)):mul(1/(2*self.var_hat))
 
     local minpi = torch.add(-self.pi, 1)
@@ -225,9 +218,6 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
     print("LC: ",torch.sum(LC))
 --    print("LCmin: ",torch.min(LC))
 --    print("LCmax: ",torch.max(LC))
---    print(mu_gradsum:norm(), var_gradsum:norm(), pi_gradsum:norm())
---    exit()
---    accuracy = accuracy/opt.S
     return torch.add(LC, LE), LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum, sm_gradsum:mul(1/opt.S)
 end
 
@@ -237,13 +227,10 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     self:compute_prior(opt.B)
 
     local L,LE, LC, accuracy, mu_gradsum, var_gradsum, pi_gradsum, sm_grad = self:runModel(inputs, targets, model, criterion, parameters, gradParameters, opt)
---    print("var_gradsum: ", torch.mean(var_gradsum), torch.var(var_gradsum))
 
     local mleg, mlcg = self:compute_mugrads(mu_gradsum, opt)
     local vleg, vlcg = self:compute_vargrads(var_gradsum, opt)
     local pleg, plcg = self:compute_pgrads(pi_gradsum, opt)
-    print(vleg:norm(), vlcg:norm())
-
     local LD = LE + torch.sum(LC)
 
 --    print("vb_vargrads: ",torch.min(vb_vargrads), torch.max(vb_vargrads))
@@ -254,21 +241,18 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     vleg = torch.add(vleg, vlcg)
     pleg = torch.add(pleg, plcg)
 
-
-
     local x, _, update = optim.adam(function(_) return LD, mleg:mul(1/opt.batchSize) end, self.means, self.lemeanState)
     local mule_normratio = torch.norm(update)/torch.norm(x)
 --    local x, _, update = optim.adam(function(_) return LD, mlcg:mul(1/opt.batchSize) end, self.means, self.lcmeanState)
 --    local mulc_normratio = torch.norm(update)/torch.norm(x)
 
-
-
-    print("VLEG", vleg:norm())
     local x, _, update = optim.adam(function(_) return LD, vleg:mul(1/opt.batchSize) end, self.lvars, self.levarState)
     local varle_normratio = torch.norm(update)/torch.norm(x)
 --    local x, _, update = optim.adam(function(_) return LD, vlcg:mul(1/opt.batchSize) end, self.lvars, self.lcvarState)
 --    local varlc_normratio = torch.norm(update)/torch.norm(x)
 --    local mule_normratio = 0
+    print("varlenr: ",varle_normratio)
+    print("mulenr: ",mule_normratio)
 
 --    local x, _, update = optim.adam(function(_) return LD, pleg:mul(1/opt.batchSize) end, self.p, self.lepiState)
 --    local ple_normratio = torch.norm(update)/torch.norm(x)

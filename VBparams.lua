@@ -141,17 +141,6 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     local mleg, mlcg = self:compute_mugrads(gradsum, opt)
 
     local vleg, vlcg = self:compute_vargrads(LN_squared, opt)
---    print("VLEG: ", vleg:norm())
---    print("VLCG: ", vlcg:norm())
-    local diff, _ ,numg = optim.checkgrad(function()
---        self:compute_prior()
-        return self:calc_LC(opt):sum(), vlcg
-    end, self.lvars)
-    print(numg:norm(), vlcg:norm())
-    print(numg:min(), vlcg:min())
-    print(numg:max(), vlcg:max())
-    print(torch.add(numg, -vlcg):norm())
-    exit()
 
     local LC = self:calc_LC(opt)
     print("LC: ", LC:sum())

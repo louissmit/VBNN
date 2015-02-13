@@ -15,8 +15,8 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "gravesbaseline4"
-opt.type = "vb"
+opt.network_name = "ssvbgraves"
+opt.type = "ssvb"
 --opt.cuda = true
 opt.trainSize = 100
 opt.testSize = 1000
@@ -34,14 +34,14 @@ opt.alpha = 0.8 -- NVIL
 torch.manualSeed(1)
 
 opt.mu_init = 0.0001
-opt.var_init = 0.001 --torch.sqrt(2/opt.hidden[1])--0.01
+opt.var_init = 0.01 --torch.sqrt(2/opt.hidden[1])--0.01
 opt.pi_init = {
     mu = 5,
     var = 0.00001
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.0000002,
+    learningRate = 0.00001,
 --    learningRateDecay = 0.01
 }
 opt.lcvarState = {
@@ -49,8 +49,8 @@ opt.lcvarState = {
     learningRateDecay = 0.001
 }
 opt.lemeanState = {
-    learningRate = 0.0000001,
-    learningRateDecay = 0.01
+    learningRate = 0.00000001,
+--    learningRateDecay = 0.001
 }
 opt.lcmeanState = {
     learningRate = 0.000000001,
