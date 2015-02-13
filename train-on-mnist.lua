@@ -183,7 +183,7 @@ function train(dataset, type)
 
     --      local batchtime = sys.clock()
         local inputs = data.inputs[i]
-        local targets = data.targets[i]+1
+        local targets = data.targets[i][1]+1
         if opt.cuda then
             inputs = inputs:cuda()
             targets = targets:cuda()
@@ -293,7 +293,7 @@ function test(dataset, type)
 
     --      local batchtime = sys.clock()
         local inputs = data.inputs[i]
-        local targets = data.targets[i]+1
+        local targets = data.targets[i][1]+1
         if opt.cuda then
             inputs = inputs:cuda()
             targets = targets:cuda()
@@ -302,9 +302,8 @@ function test(dataset, type)
         -- test samples
         local preds = model:forward(inputs)
 --        print(torch.gt(model:get(3).output, 0):sum())
---        accuracy = accuracy + u.get_accuracy(preds, targets)
-        local err = criterion:forward(preds, targets[1])
-    print(err)
+        accuracy = accuracy + u.get_accuracy(preds, targets)
+        local err = criterion:forward(preds, targets)
 
         avg_error = avg_error + err
 

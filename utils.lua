@@ -10,13 +10,22 @@ local utils = {}
 
 function utils.get_accuracy(outputs, targets)
    local correct, total = 0, 0
-   for i = 1, targets:size(1) do
-      total = total + 1
-      local _, index = outputs[i]:max(1)
-      if index[1] == targets[i] then
+   if type(targets) == 'number' then
+       total = total + 1
+       local _, index = outputs:max(1)
+       if index[1] == targets then
          correct = correct + 1
-      end
+       end
+   else
+       for i = 1, targets:size(1) do
+           total = total + 1
+           local _, index = outputs[i]:max(1)
+           if index[1] == targets[i] then
+               correct = correct + 1
+           end
+       end
    end
+
    return (correct / total)*100
 end
 
