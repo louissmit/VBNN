@@ -19,12 +19,12 @@ function split(string)
     return res
 end
 
-function viz.show_tensors(tensors, dim, id)
+function viz.show_tensors(tensors, dim, id, min, max)
     local tensor_imgs = {}
     for i = 1, dim do
         table.insert(tensor_imgs, tensors[i])
     end
-    gfx.image(tensor_imgs,{zoom=3.5, legend=id, win=id})
+    gfx.image(tensor_imgs,{zoom=3.5, legend=id, win=id, min=min, max=max})
 end
 
 function viz.show_input_parameters(params, size, id, opt)
@@ -32,7 +32,9 @@ function viz.show_input_parameters(params, size, id, opt)
     if cuda then
         weights = weights:float()
     end
-    viz.show_tensors(weights, opt.hidden[1], id)
+    local min = weights:min()
+    local max= weights:max()
+    viz.show_tensors(weights, opt.hidden[1], id, min, max)
     print("weights:min(): ", torch.min(weights))
     print("weights:max(): ", torch.max(weights))
 end

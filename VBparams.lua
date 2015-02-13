@@ -83,7 +83,8 @@ end
 function VBparams:compute_vargrads(LN_squared, opt)
     local vars = torch.exp(self.lvars)
     local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):mul(1/opt.B)
-    return LN_squared:mul(1/2*opt.S):cdiv(self.lvars), lcg:mul(1/2):cdiv(self.lvars)
+--    local lcg = torch.pow(vars, -1):div(self.var_hat())
+    return LN_squared:mul(1/2*opt.S):cmul(vars), lcg:mul(1/2):cmul(vars)
 end
 
 function VBparams:calc_LC(opt)
@@ -142,6 +143,15 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     local vleg, vlcg = self:compute_vargrads(LN_squared, opt)
 --    print("VLEG: ", vleg:norm())
 --    print("VLCG: ", vlcg:norm())
+    local numg = u.num_grad(self.lvars, function()
+--        self:compute_prior()
+        return self:calc_LC(opt)
+    end)
+    print(numg:norm(), vlcg:norm())
+    print(numg:min(), vlcg:min())
+    print(numg:max(), vlcg:max())
+    print(torch.add(numg, -vlcg):norm())
+    exit()
 
     local LC = self:calc_LC(opt)
     print("LC: ", LC:sum())
@@ -178,6 +188,11 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
         nrlogger:add{['mule'] = mule_normratio, ['mulc'] = mulc_normratio,['varle'] = varle_normratio,['varlc'] = varlc_normratio}
         nrlogger:plot()
     end
+    print("beta.means:min(): ", torch.min(beta.means))
+    print("beta.means:max(): ", torch.max(beta.means))
+    print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+    print("beta.vars:avg(): ", torch.mean(torch.exp(beta.lvars)))
+    print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
 
     return torch.sum(LC), LE, accuracy
 end
