@@ -15,8 +15,8 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "vbproper2"
-opt.type = "vb"
+opt.network_name = "ssvbloooooooong"
+opt.type = "ssvb"
 --opt.cuda = true
 opt.trainSize = 100
 opt.testSize = 1000
@@ -57,7 +57,7 @@ opt.lcmeanState = {
     learningRateDecay = 0.01
 }
 opt.lepiState = {
-    learningRate = 0.0000001,
+    learningRate = 0.00000001,
 }
 opt.lcpiState = {
     learningRate = 0.000001,
@@ -108,9 +108,6 @@ if opt.cuda then
     criterion:cuda()
 end
 
---print(model:get(2).weight:mean())
---print(torch.sqrt(model:get(2).weight:var()))
-
 -- retrieve parameters and gradients
 parameters, gradParameters = model:getParameters()
 
@@ -137,10 +134,6 @@ end
 
 -- verbose
 print('<mnist> using model:')
---print(model)
---print(model:get(2).weight:mean())
---print(torch.sqrt(model:get(2).weight:var()))
---exit()
 
 
 ----------------------------------------------------------------------
@@ -205,6 +198,8 @@ function train(dataset, type)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
+            print("beta.means:min(): ", torch.min(beta.means))
+            print("beta.means:max(): ", torch.max(beta.means))
             print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
             print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
             print("beta.pi:min(): ", torch.min(beta.pi))
@@ -320,22 +315,8 @@ errorLogger = optim.Logger(paths.concat(opt.network_name, 'error.log'))
 leLogger = optim.Logger(paths.concat(opt.network_name, 'le.log'))
 lcLogger = optim.Logger(paths.concat(opt.network_name, 'lc.log'))
 nrlogger = optim.Logger(paths.concat(opt.network_name, 'nr.log'))
---    local init = viz.show_images(trainData, torch.totable(torch.range(1,10)), 'weights')
---    init:add(-init:mean())
---    init:div(100*init:var())
---    local inputparams = parameters:narrow(1,1,10*784)
---    inputparams:copy(init)
---    print(inputparams:min(), inputparams:max())
---    print(inputparams:mean(), inputparams:var())
-while true do
---    viz.show_uncertainties(model, parameters, testData, beta.means, beta.vars, opt.hidden)
---    local init = viz.show_images(trainData, {1,2,3,13,15,16,17,18,19,20})
 
---    viz.show_input_parameters(parameters, parameters:size(), opt)
---    model:forward(trainData.inputs[5])
---    print(model:get(2).output)
---    viz.show_tensors(model:get(2).output, opt.hidden[1], 'activations')
---    break
+while true do
     -- train/test
     local trainaccuracy, trainerror, lc, le = train(trainData, opt.type)
     if opt.viz then
