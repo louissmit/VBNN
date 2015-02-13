@@ -76,15 +76,15 @@ function VBparams:compute_prior()
 end
 
 function VBparams:compute_mugrads(gradsum, opt)
-    local lcg = torch.add(self.means, -self.mu_hat):mul(1/(opt.B*self.var_hat))
+    local lcg = torch.add(self.means, -self.mu_hat):div(opt.B*self.var_hat)
     return gradsum:div(opt.S), lcg
 end
 
 function VBparams:compute_vargrads(LN_squared, opt)
     local vars = torch.exp(self.lvars)
-    local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):mul(1/opt.B)
+    local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):div(2*opt.B)
 --    local lcg = torch.pow(vars, -1):div(self.var_hat())
-    return LN_squared:mul(1/2*opt.S):cmul(vars), lcg:mul(1/2):cmul(vars)
+    return LN_squared:div(2*opt.S):cmul(vars), lcg:cmul(vars)
 end
 
 function VBparams:calc_LC(opt)
@@ -143,10 +143,10 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     local vleg, vlcg = self:compute_vargrads(LN_squared, opt)
 --    print("VLEG: ", vleg:norm())
 --    print("VLCG: ", vlcg:norm())
-    local numg = u.num_grad(self.lvars, function()
+    local diff, _ ,numg = optim.checkgrad(function()
 --        self:compute_prior()
-        return self:calc_LC(opt)
-    end)
+        return self:calc_LC(opt):sum(), vlcg
+    end, self.lvars)
     print(numg:norm(), vlcg:norm())
     print(numg:min(), vlcg:min())
     print(numg:max(), vlcg:max())
