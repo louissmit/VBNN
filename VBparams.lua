@@ -66,8 +66,8 @@ function VBparams:sampleW()
 end
 
 function VBparams:compute_prior()
---    self.mu_hat = (1/self.W)*torch.sum(self.means)
-    self.mu_hat = 0
+    self.mu_hat = (1/self.W)*torch.sum(self.means)
+--    self.mu_hat = 0
     local vars = self.vars --torch.exp(self.lvars)
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 

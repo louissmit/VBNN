@@ -118,8 +118,8 @@ function VBSSparams:compute_mugrads(gradsum, opt)
 end
 
 function VBSSparams:compute_vargrads(gradsum, opt)
-    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):div(2*opt.B):cdiv(self.lvars)
-    return gradsum:div(2*opt.S):cdiv(self.lvars), lcg
+    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):div(2*opt.B):cmul(self.vars)
+    return gradsum:div(2*opt.S):cmul(self.vars), lcg
 --    return torch.add(lcg, gradsum:mul(1/opt.S)):mul(1/2), lcg:mul(1/2)
 --    return torch.add(lcg, gradsum:mul(1/(2*opt.S)):cmul(torch.pow(self.stdv, -1))), lcg:mul(1/2):cmul(self.vars)
 end
