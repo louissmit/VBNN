@@ -102,7 +102,8 @@ function VBSSparams:compute_prior(B)
     self.stdv = torch.sqrt(self.vars)
     self.pi = torch.pow(torch.add(torch.exp(-self.p),1),-1)
 
-    self.mu_hat = (1/self.W)*torch.sum(self.means) -- comment out for grad check
+--    self.mu_hat = (1/self.W)*torch.sum(self.means) -- comment out for grad check
+    self.mu_hat = 0
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
     self.var_hat = (1/(self.W))*torch.sum(torch.add(self.vars, self.mu_sqe))
@@ -274,6 +275,14 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
         }
         nrlogger:plot()
     end
+    print("beta.means:min(): ", torch.min(beta.means))
+    print("beta.means:max(): ", torch.max(beta.means))
+    print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+    print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
+--    print("beta.pi:min(): ", torch.min(beta.pi))
+--    print("beta.pi:max(): ", torch.max(beta.pi))
+--    print("beta.pi:avg(): ", torch.mean(beta.pi))
+--
 
     return LE, torch.sum(LC), accuracy
 end

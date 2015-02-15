@@ -15,17 +15,17 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "sadfasdf"
-opt.type = ""
+opt.network_name = "vbbacteria"
+opt.type = "ssvb"
 --opt.cuda = true
 opt.trainSize = 50
-opt.testSize = 1000
+--opt.testSize = 1000
 
 opt.plot = true
 opt.batchSize = 1
 opt.B = 1--(opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}
-opt.S = 10
+opt.S = 5
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
 --opt.plotlc = true
@@ -41,7 +41,7 @@ opt.pi_init = {
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.00001,
+    learningRate = 0.0000001,
 --    learningRateDecay = 0.01
 }
 opt.lcvarState = {
@@ -49,7 +49,7 @@ opt.lcvarState = {
     learningRateDecay = 0.001
 }
 opt.lemeanState = {
-    learningRate = 0.00000001,
+    learningRate = 0.0000001,
 --    learningRateDecay = 0.001
 }
 opt.lcmeanState = {
@@ -200,21 +200,12 @@ function train(dataset, type)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
-            print("beta.means:min(): ", torch.min(beta.means))
-            print("beta.means:max(): ", torch.max(beta.means))
-            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
         elseif type == 'ssvb' then
 
             local le, lc, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
-            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
-            print("beta.pi:min(): ", torch.min(beta.pi))
-            print("beta.pi:max(): ", torch.max(beta.pi))
-            print("beta.pi:avg(): ", torch.mean(beta.pi))
         else
             local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             error = error + err
@@ -326,13 +317,7 @@ errorLogger = optim.Logger(paths.concat(opt.network_name, 'error.log'))
 leLogger = optim.Logger(paths.concat(opt.network_name, 'le.log'))
 lcLogger = optim.Logger(paths.concat(opt.network_name, 'lc.log'))
 nrlogger = optim.Logger(paths.concat(opt.network_name, 'nr.log'))
---    local init = viz.show_images(trainData, torch.totable(torch.range(1,10)), 'weights')
---    init:add(-init:mean())
---    init:div(100*init:var())
---    local inputparams = parameters:narrow(1,1,10*784)
---    inputparams:copy(init)
---    print(inputparams:min(), inputparams:max())
---    print(inputparams:mean(), inputparams:var())
+
 while true do
 --    viz.show_uncertainties(model, parameters, testData, beta.means, beta.vars, opt.hidden)
 --    local init = viz.show_images(trainData, {1,2,3,13,15,16,17,18,19,20})
