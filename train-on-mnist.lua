@@ -8,16 +8,16 @@ NNparams = require('NNparams')
 VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
 require 'torch'
---require 'cunn'
+require 'cunn'
 --torch.setdefaulttensortype('torch.CudaTensor')
 --print( inspect(cutorch.getDeviceProperties(cutorch.getDevice()) ))
 local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "vbbacteria"
+opt.network_name = "cudavbbacteria2"
 opt.type = "ssvb"
---opt.cuda = true
+opt.cuda = true
 opt.trainSize = 50
 --opt.testSize = 1000
 
@@ -25,7 +25,7 @@ opt.plot = true
 opt.batchSize = 1
 opt.B = 1--(opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}
-opt.S = 5
+opt.S = 10
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
 --opt.plotlc = true
@@ -41,7 +41,7 @@ opt.pi_init = {
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.0000001,
+    learningRate = 0.00000001,
 --    learningRateDecay = 0.01
 }
 opt.lcvarState = {
@@ -49,8 +49,8 @@ opt.lcvarState = {
     learningRateDecay = 0.001
 }
 opt.lemeanState = {
-    learningRate = 0.0000001,
---    learningRateDecay = 0.001
+    learningRate = 0.00000002,
+--    learningRateDecay = 0.01
 }
 opt.lcmeanState = {
     learningRate = 0.000000001,
@@ -78,6 +78,17 @@ torch.setdefaulttensortype('torch.FloatTensor')
 
 
 data = torch.load('bacteria.torch')
+local empty_ft = torch.gt(data.inputs:var(1), 0):sum()
+local new_inputs = torch.Tensor(data.inputs:size(1), empty_ft)
+local j = 1
+for i = 1, data.inputs:size(2) do
+    local feature = data.inputs:select(2, i)
+    if feature:var() ~= 0 then
+        new_inputs[{{},j}] = feature
+        j = j + 1
+    end
+end
+data.inputs = new_inputs
 u.normalize(data.inputs)
 data.targets = data.targets:byte()
 indices = torch.randperm(data.inputs:size(1))
@@ -186,7 +197,6 @@ function train(dataset, type)
         local targets = data.targets[i][1]+1
         if opt.cuda then
             inputs = inputs:cuda()
-            targets = targets:cuda()
         end
 
         collectgarbage()
@@ -287,7 +297,6 @@ function test(dataset, type)
         local targets = data.targets[i][1]+1
         if opt.cuda then
             inputs = inputs:cuda()
-            targets = targets:cuda()
         end
 
         -- test samples
