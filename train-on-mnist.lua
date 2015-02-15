@@ -8,16 +8,16 @@ NNparams = require('NNparams')
 VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
 require 'torch'
---require 'cunn'
+require 'cunn'
 --torch.setdefaulttensortype('torch.CudaTensor')
 --print( inspect(cutorch.getDeviceProperties(cutorch.getDevice()) ))
 local mnist = require('mnist')
 opt = {}
 opt.threads = 1
-opt.network_to_load = ""
-opt.network_name = "ssvbgraves"
+opt.network_to_load = "gravesbaseline5"
+opt.network_name = "asdfas"
 opt.type = "ssvb"
---opt.cuda = true
+opt.cuda = true
 opt.trainSize = 100
 opt.testSize = 1000
 
@@ -44,24 +44,24 @@ opt.levarState = {
     learningRate = 0.00001,
 --    learningRateDecay = 0.01
 }
-opt.lcvarState = {
-    learningRate = 0.0000001,
-    learningRateDecay = 0.001
-}
-opt.lemeanState = {
-    learningRate = 0.00000001,
+--opt.lcvarState = {
+--    learningRate = 0.0000001,
 --    learningRateDecay = 0.001
+--}
+opt.lemeanState = {
+    learningRate = 0.0000001,
+    learningRateDecay = 0.1
 }
-opt.lcmeanState = {
-    learningRate = 0.000000001,
-    learningRateDecay = 0.01
-}
+--opt.lcmeanState = {
+--    learningRate = 0.000000001,
+--    learningRateDecay = 0.01
+--}
 opt.lepiState = {
-    learningRate = 0.00000001,
-}
-opt.lcpiState = {
     learningRate = 0.000001,
 }
+--opt.lcpiState = {
+--    learningRate = 0.000001,
+--}
 opt.smState = {
     learningRate = 0.00000002,
 }
@@ -195,13 +195,6 @@ function train(dataset, type)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
-            print("beta.means:min(): ", torch.min(beta.means))
-            print("beta.means:max(): ", torch.max(beta.means))
-            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
-            print("beta.pi:min(): ", torch.min(beta.pi))
-            print("beta.pi:max(): ", torch.max(beta.pi))
-            print("beta.pi:avg(): ", torch.mean(beta.pi))
         else
             local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             error = error + err

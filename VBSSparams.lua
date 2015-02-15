@@ -15,10 +15,6 @@ local VBSSparams = {}
 
 
 function VBSSparams:init(W, opt)
-    self.thirdlclog = viz.graph_things(opt, 'thirdlc')
-    self.secondlc = viz.graph_things(opt, 'secondlc')
-    self.firstlc = viz.graph_things(opt, 'firstlc')
-
     self.W = W
     self.lvars = torch.Tensor(W):fill(torch.log(opt.var_init))
     self.means = randomkit.normal(
@@ -28,12 +24,6 @@ function VBSSparams:init(W, opt)
         torch.Tensor(self.W):fill(opt.pi_init.mu),
         torch.Tensor(self.W):fill(opt.pi_init.var)):float()
     self.smp = parameters:narrow(1, self.W, parameters:size(1)-self.W) -- softmax layer params
-
-    if opt.cuda then
-        self.means = self.means:cuda()
-        self.lvars = self.lvars:cuda()
-        self.p = self.p:cuda()
-    end
 
     -- optimisation state
     self.levarState = opt.levarState
@@ -64,9 +54,6 @@ function VBSSparams:load(model_dir)
     self.W = torch.load(paths.concat(model_dir, 'opt')).W
 
     parameters:narrow(1, self.W, parameters:size(1)-self.W):copy(self.smp) --load softmax layer
-        self.thirdlclog = viz.graph_things(opt, 'thirdlc')
-    self.secondlc = viz.graph_things(opt, 'secondlc')
-    self.firstlc = viz.graph_things(opt, 'firstlc')
     return self
 end
 
@@ -140,14 +127,6 @@ function VBSSparams:calc_LC(B)
     local minpi = torch.add(-self.pi, 1)
     local LCthird = torch.add(torch.cmul(minpi, torch.log(minpi)), torch.cmul(self.pi, torch.log(self.pi)))
     LCthird:add(-torch.add(torch.mul(minpi, torch.log(1-self.pi_hat)), torch.mul(self.pi, torch.log(self.pi_hat))))
-    if opt.plotlc then
-    self.thirdlclog:add(LCthird:sum())
-    self.thirdlclog:plot()
-    self.secondlc:add(LCsecond:sum())
-    self.secondlc:plot()
-    self.firstlc:add(LCfirst:sum())
-    self.firstlc:plot()
-    end
     print("LCFirst: ", torch.sum(torch.mul(LCfirst, 1/B)))
 --    print("LCFirst: ", torch.min(torch.mul(LCfirst, 1/B)))
 --    print("LCFirst: ", torch.max(torch.mul(LCfirst, 1/B)))
@@ -164,13 +143,6 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
     local pi_gradsum = torch.Tensor(self.W):zero()
     local pi_gradsum2 = torch.Tensor(self.W):zero()
     local sm_gradsum = torch.Tensor(smsize):zero()
-    if opt.cuda then
-        var_gradsum = var_gradsum:cuda()
-        mu_gradsum = mu_gradsum:cuda()
-        pi_gradsum = pi_gradsum:cuda()
-        pi_gradsum2 = pi_gradsum2:cuda()
-        sm_gradsum = sm_gradsum:cuda()
-    end
 
     local outputs
     local LE = 0
@@ -180,7 +152,15 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
 
     for i = 1, opt.S do
         local e, z = self:sampleTheta()
-        local w = torch.cmul(torch.add(self.means, torch.cmul(self.stdv, e)), z)
+        local w, pz
+        if opt.cuda then
+            w = torch.cmul(torch.add(self.means:cuda(), torch.cmul(self.stdv:cuda(), e)), z)
+            pz = torch.add(z, -self.pi:cuda())
+            sm_gradsum = sm_gradsum:cuda()
+        else
+            w = torch.cmul(torch.add(self.means, torch.cmul(self.stdv, e)), z)
+            pz = torch.add(z, -self.pi)
+        end
 
         local p = parameters:narrow(1,1, self.W)
         local g = gradParameters:narrow(1,1, self.W)
@@ -198,11 +178,10 @@ function VBSSparams:runModel(inputs, targets, model, criterion, parameters, grad
         LL_sum = LL_sum + LL
         local smg = gradParameters:narrow(1, self.W, smsize)
         sm_gradsum:add(smg)
-        mu_gradsum:add(torch.cmul(z, g))
-        var_gradsum:add(torch.cmul(e, torch.cmul(z, g)))
+        mu_gradsum:add(torch.cmul(z, g):float())
+        var_gradsum:add(torch.cmul(e, torch.cmul(z, g)):float())
 
-        local pz = torch.add(z, -self.pi)
-        pi_gradsum:add(pz:mul(LL))
+        pi_gradsum:add(pz:mul(LL):float())
 --        pi_gradsum2:add(pz)
         gradParameters:zero()
     end
@@ -237,6 +216,8 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
 --    print("var_vargrads: ", torch.mean(vb_vargrads), torch.var(vb_vargrads))
 --    print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
 --    print("vb_pigrads: ", torch.min(pi_grads), torch.max(pi_grads))
+    print("VLEG: ", vleg:norm())
+    print("VLCG: ", vlcg:norm())
     mleg = torch.add(mleg, mlcg)
     vleg = torch.add(vleg, vlcg)
     pleg = torch.add(pleg, plcg)
