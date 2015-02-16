@@ -16,7 +16,7 @@ function NNparams:init(parameters, opt)
     local newp = torch.Tensor(opt.W)
     randomkit.normal(newp, 0, torch.sqrt(opt.var_init))
     parameters:narrow(1, 1, opt.W):copy(newp)
-    self.optimState = opt.lemeanState
+    self.optimState = opt.smState
     self.update_counter = 0
     self.parameters = parameters
 

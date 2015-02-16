@@ -66,24 +66,25 @@ function VBparams:sampleW()
 end
 
 function VBparams:compute_prior()
---    self.mu_hat = (1/self.W)*torch.sum(self.means)
-    self.mu_hat = 0
+    self.mu_hat = (1/self.W)*torch.sum(self.means)
+--    self.mu_hat = 0
     local vars = torch.exp(self.lvars)
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
+--    self.var_hat = torch.pow(0.075, 2)
     self.var_hat = (1/self.W)*torch.sum(torch.add(vars, self.mu_sqe))
     return self.mu_hat, self.var_hat
 end
 
 function VBparams:compute_mugrads(gradsum, opt)
-    local lcg = torch.add(self.means, -self.mu_hat):mul(1/(opt.B*self.var_hat))
+    local lcg = torch.add(self.means, -self.mu_hat):div(opt.B*self.var_hat)
     return gradsum:div(opt.S), lcg
 end
 
 function VBparams:compute_vargrads(LN_squared, opt)
     local vars = torch.exp(self.lvars)
-    local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):mul(1/opt.B)
-    return LN_squared:mul(1/2*opt.S):cdiv(self.lvars), lcg:mul(1/2):cdiv(self.lvars)
+    local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):div(2*opt.B)
+    return LN_squared:div(2*opt.S):cmul(vars), lcg:cmul(vars)
 end
 
 function VBparams:calc_LC(opt)
@@ -92,7 +93,7 @@ function VBparams:calc_LC(opt)
 --    print(torch.var(torch.log(torch.sqrt(vars))))
 --    print(torch.log(torch.sqrt(self.var_hat)))
     local LCfirst = torch.add(-torch.log(torch.sqrt(vars)), torch.log(torch.sqrt(self.var_hat)))
-    local LCsecond = torch.add(self.mu_sqe, torch.add(vars, -self.var_hat)):mul(1/(2*self.var_hat))
+    local LCsecond = torch.add(self.mu_sqe, torch.add(vars, -self.var_hat)):div(2*self.var_hat)
 --    print("LCFirst: ", torch.sum(torch.div(LCfirst, opt.B)))
 --    print("LCsecond: ", torch.sum(torch.div(self.mu_sqe, 2*self.var_hat):div(opt.B)))
 --    print("LCthird: ", torch.sum(torch.div(vars, 2*self.var_hat):div(opt.B)))
@@ -115,6 +116,7 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
         local w = self:sampleW()
         if opt.cuda then
             w = w:cuda()
+            sm_gradsum = sm_gradsum:cuda()
         end
 
         p:copy(w)
@@ -140,12 +142,12 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     local mleg, mlcg = self:compute_mugrads(gradsum, opt)
 
     local vleg, vlcg = self:compute_vargrads(LN_squared, opt)
---    print("VLEG: ", vleg:norm())
---    print("VLCG: ", vlcg:norm())
 
     local LC = self:calc_LC(opt)
     print("LC: ", LC:sum())
     print("LE: ", LE)
+    print("vleg: ", vleg:norm())
+    print("vlcg: ", vlcg:norm())
 
     local LD = LE + torch.sum(LC)
     mleg = torch.add(mleg, mlcg)
@@ -178,6 +180,11 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
         nrlogger:add{['mule'] = mule_normratio, ['mulc'] = mulc_normratio,['varle'] = varle_normratio,['varlc'] = varlc_normratio}
         nrlogger:plot()
     end
+    print("beta.means:min(): ", torch.min(beta.means))
+    print("beta.means:max(): ", torch.max(beta.means))
+    print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+    print("beta.vars:avg(): ", torch.mean(torch.exp(beta.lvars)))
+    print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
 
     return torch.sum(LC), LE, accuracy
 end

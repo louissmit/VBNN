@@ -15,15 +15,15 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "cudavbbacteria2"
-opt.type = "ssvb"
+opt.network_name = "cudavbbacteria3"
+opt.type = "vb"
 opt.cuda = true
 opt.trainSize = 50
 --opt.testSize = 1000
 
 opt.plot = true
 opt.batchSize = 1
-opt.B = 1--(opt.trainSize/opt.batchSize)--*100
+opt.B = (opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}
 opt.S = 10
 opt.alpha = 0.8 -- NVIL
@@ -31,31 +31,31 @@ opt.alpha = 0.8 -- NVIL
 --opt.plotlc = true
 --opt.viz = true
 -- fix seed
-torch.manualSeed(1)
+torch.manualSeed(3)
 
-opt.mu_init = 0.0001
-opt.var_init = 0.01 --torch.sqrt(2/opt.hidden[1])--0.01
+opt.mu_init = 0.1
+opt.var_init = torch.pow(0.0075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
 opt.pi_init = {
     mu = 5,
     var = 0.00001
 }
 -- optimisation params
 opt.levarState = {
+    learningRate = 0.00001,
+--    learningRateDecay = 0.01
+}
+--opt.lcvarState = {
+--    learningRate = 0.0000001,
+--    learningRateDecay = 0.001
+--}
+opt.lemeanState = {
     learningRate = 0.00000001,
 --    learningRateDecay = 0.01
 }
-opt.lcvarState = {
-    learningRate = 0.0000001,
-    learningRateDecay = 0.001
-}
-opt.lemeanState = {
-    learningRate = 0.00000002,
+--opt.lcmeanState = {
+--    learningRate = 0.000000001,
 --    learningRateDecay = 0.01
-}
-opt.lcmeanState = {
-    learningRate = 0.000000001,
-    learningRateDecay = 0.01
-}
+--}
 opt.lepiState = {
     learningRate = 0.00000001,
 }
