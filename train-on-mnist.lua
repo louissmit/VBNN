@@ -15,7 +15,7 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "gravesbaseline6"
+opt.network_name = "gravesbaseline9"
 opt.type = "vb"
 --opt.cuda = true
 opt.trainSize = 100
@@ -25,13 +25,13 @@ opt.plot = true
 opt.batchSize = 1
 opt.B = (opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}
-opt.S = 5
+opt.S = 20
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
 --opt.plotlc = true
 --opt.viz = true
 -- fix seed
-torch.manualSeed(1)
+torch.manualSeed(3)
 
 opt.mu_init = 0.0001
 opt.var_init = 0.01 --torch.sqrt(2/opt.hidden[1])--0.01
@@ -44,18 +44,18 @@ opt.levarState = {
     learningRate = 0.00000003,
 --    learningRateDecay = 0.01
 }
-opt.lcvarState = {
-    learningRate = 0.0000001,
-    learningRateDecay = 0.001
-}
+--opt.lcvarState = {
+--    learningRate = 0.0000001,
+--    learningRateDecay = 0.001
+--}
 opt.lemeanState = {
     learningRate = 0.0000001,
     learningRateDecay = 0.1
 }
-opt.lcmeanState = {
-    learningRate = 0.000000001,
-    learningRateDecay = 0.01
-}
+--opt.lcmeanState = {
+--    learningRate = 0.000000001,
+--    learningRateDecay = 0.01
+--}
 opt.lepiState = {
     learningRate = 0.00000001,
 }
@@ -163,7 +163,6 @@ function train(dataset, type)
     local avg_lc = 0
     local avg_le = 0
 
-    -- local vars
     local time = sys.clock()
 
     -- do one epoch
@@ -237,7 +236,6 @@ function test(dataset, type)
     local mu_acc = 0
     local avg_error = 0
     print("Testing!")
-    -- local vars
     local time = sys.clock()
     if type == 'vb' then
         local p = parameters:narrow(1,1, opt.W)
@@ -300,7 +298,7 @@ while true do
     if opt.viz then
 --        viz.show_input_parameters(parameters, parameters:size(), opt)
         viz.show_input_parameters(beta.means, beta.means:size(), 'means', opt)
-        viz.show_input_parameters(beta.lvars, beta.lvars:size(), 'vars', opt)
+        viz.show_input_parameters(beta.vars, beta.vars:size(), 'vars', opt)
         if type == 'ssvb' then
             viz.show_input_parameters(beta.p, beta.p:size(), 'pi', opt)
         end

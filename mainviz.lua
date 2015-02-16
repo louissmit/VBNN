@@ -8,12 +8,12 @@
 
 local viz = require('visualize')
 
-local model_dir = 'vbloooooooong'
+local model_dir = 'gravesbaseline6'
 local dir = paths.concat(model_dir, 'parameters')
 local means = torch.load(paths.concat(dir, 'means'))
-local lvars = torch.load(paths.concat(dir, 'lvars'))
+local vars = torch.load(paths.concat(dir, 'vars'))
 local opt = torch.load(paths.concat(model_dir, 'opt'))
-local vars = torch.exp(lvars)
+--local vars = torch.exp(lvars)
 
 --viz.show_input_parameters(means, means:size(), 'means', opt)
 --viz.show_input_parameters(vars, vars:size(), 'vars', opt)

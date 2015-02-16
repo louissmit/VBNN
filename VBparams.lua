@@ -71,6 +71,7 @@ function VBparams:compute_prior()
     local vars = self.vars --torch.exp(self.lvars)
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
+--    self.var_hat = torch.pow(0.075, 2)
     self.var_hat = (1/self.W)*torch.sum(torch.add(vars, self.mu_sqe))
     return self.mu_hat, self.var_hat
 end
@@ -83,7 +84,6 @@ end
 function VBparams:compute_vargrads(LN_squared, opt)
     local vars = self.vars --torch.exp(self.lvars)
     local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):div(2*opt.B)
---    local lcg = torch.pow(vars, -1):div(self.var_hat())
     return LN_squared:div(2*opt.S), lcg
 end
 
@@ -145,6 +145,8 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     local LC = self:calc_LC(opt)
     print("LC: ", LC:sum())
     print("LE: ", LE)
+    print("vleg: ", vleg:norm())
+    print("vlcg: ", vlcg:norm())
 
     local LD = LE + torch.sum(LC)
     mleg = torch.add(mleg, mlcg)
