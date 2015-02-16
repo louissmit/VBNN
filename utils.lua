@@ -12,7 +12,7 @@ function utils.get_accuracy(outputs, targets)
    local correct, total = 0, 0
    for i = 1, targets:size(1) do
       total = total + 1
-      _, index = outputs[i]:max(1)
+      local _, index = outputs[i]:max(1)
       if index[1] == targets[i] then
          correct = correct + 1
       end

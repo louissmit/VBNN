@@ -12,10 +12,9 @@ local inspect = require 'inspect'
 local NNparams = {}
 
 function NNparams:init(parameters, opt)
-    local size = parameters:size(1)
-    local newp = torch.Tensor(opt.W)
+    local newp = torch.Tensor():resizeAs(parameters)
     randomkit.normal(newp, 0, torch.sqrt(opt.var_init))
-    parameters:narrow(1, 1, opt.W):copy(newp)
+    parameters:copy(newp)
     self.optimState = opt.lemeanState
     self.update_counter = 0
     self.parameters = parameters
