@@ -189,4 +189,22 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     return torch.sum(LC), LE, accuracy
 end
 
+function VBparams:test(input, target, model, parameters, criterion, opt)
+    local accuracy = 0
+    local error = 0
+    local p = parameters:narrow(1,1, opt.W)
+    for i = 1, opt.testSamples do
+        local w = self:sampleW()
+--        local w = self.means
+        if opt.cuda then
+            w = w:cuda()
+        end
+        p:copy(w)
+        local outputs = model:forward(input)
+        error = error + criterion:forward(outputs, target)
+        accuracy = accuracy + u.get_accuracy(outputs, target)
+    end
+    return error/opt.testSamples, accuracy/opt.testSamples
+end
+
 return VBparams

@@ -15,10 +15,10 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "cudavbbacteria3"
+opt.network_name = "vb30noseed"
 opt.type = "vb"
 opt.cuda = true
-opt.trainSize = 50
+opt.trainSize = 70
 --opt.testSize = 1000
 
 opt.plot = true
@@ -26,15 +26,16 @@ opt.batchSize = 1
 opt.B = (opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}
 opt.S = 10
+opt.testSamples = 1
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
 --opt.plotlc = true
 --opt.viz = true
 -- fix seed
-torch.manualSeed(3)
+--torch.manualSeed(3)
 
-opt.mu_init = 0.1
-opt.var_init = torch.pow(0.0075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
+opt.mu_init = 0.0000001
+opt.var_init = 0.01--torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
 opt.pi_init = {
     mu = 5,
     var = 0.00001
@@ -49,8 +50,8 @@ opt.levarState = {
 --    learningRateDecay = 0.001
 --}
 opt.lemeanState = {
-    learningRate = 0.00000001,
---    learningRateDecay = 0.01
+    learningRate = 0.0000001,
+    learningRateDecay = 0.01
 }
 --opt.lcmeanState = {
 --    learningRate = 0.000000001,
@@ -292,20 +293,27 @@ function test(dataset, type)
     print('<trainer> on testing Set:')
     for t, i in pairs(test_indices) do
 
-    --      local batchtime = sys.clock()
+        --      local batchtime = sys.clock()
         local inputs = data.inputs[i]
         local targets = data.targets[i][1]+1
         if opt.cuda then
             inputs = inputs:cuda()
         end
+        if type == 'vb' then
 
-        -- test samples
-        local preds = model:forward(inputs)
---        print(torch.gt(model:get(3).output, 0):sum())
-        accuracy = accuracy + u.get_accuracy(preds, targets)
-        local err = criterion:forward(preds, targets)
+            local err, acc = beta:test(inputs, targets, model, parameters, criterion, opt)
+            accuracy = accuracy + acc
+            avg_error = avg_error + err
+        else
+            -- test samples
+            local preds = model:forward(inputs)
+            --        print(torch.gt(model:get(3).output, 0):sum())
+            accuracy = accuracy + u.get_accuracy(preds, targets)
+            local err = criterion:forward(preds, targets)
 
-        avg_error = avg_error + err
+            avg_error = avg_error + err
+        end
+
 
     end
 
@@ -337,7 +345,7 @@ while true do
 --    viz.show_tensors(model:get(2).output, opt.hidden[1], 'activations')
 --    break
     -- train/test
-    local trainaccuracy, trainerror, lc, le = train(trainData, opt.type)
+--    local trainaccuracy, trainerror, lc, le = train(trainData, opt.type)
     if opt.viz then
 --        viz.show_input_parameters(parameters, parameters:size(), opt)
         viz.show_input_parameters(beta.means, beta.means:size(), 'means', opt)
@@ -350,6 +358,7 @@ while true do
     print("TRAINACCURACY: ", trainaccuracy, trainerror)
     local testaccuracy, testerror = test(testData, opt.type)
     print("TESTACCURACY: ", testaccuracy, testerror)
+exit()
 
 --    viz.graph_things(accuracies)
     accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy }

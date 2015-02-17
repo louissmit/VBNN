@@ -92,8 +92,7 @@ function VBSSparams:compute_prior(B)
     self.stdv = torch.sqrt(self.vars)
     self.pi = torch.pow(torch.add(torch.exp(-self.p),1),-1)
 
---    self.mu_hat = (1/self.W)*torch.sum(self.means) -- comment out for grad check
-    self.mu_hat = 0
+    self.mu_hat = (1/self.W)*torch.sum(self.means) -- comment out for grad check
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
     self.var_hat = (1/(self.W))*torch.sum(torch.add(self.vars, self.mu_sqe))
@@ -220,6 +219,10 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
 --    print("var_vargrads: ", torch.mean(vb_vargrads), torch.var(vb_vargrads))
 --    print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
 --    print("vb_pigrads: ", torch.min(pi_grads), torch.max(pi_grads))
+--    print("VLEG: ", vleg:norm())
+--    print("VLCG: ", vlcg:norm())
+    print("MLEG: ", mleg:norm())
+    print("MLCG: ", mlcg:norm())
     mleg = torch.add(mleg, mlcg)
     vleg = torch.add(vleg, vlcg)
     pleg = torch.add(pleg, plcg)
@@ -260,6 +263,7 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     print("beta.means:min(): ", torch.min(beta.means))
     print("beta.means:max(): ", torch.max(beta.means))
     print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+    print("beta.vars:avg(): ", torch.mean(torch.exp(beta.lvars)))
     print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
 --    print("beta.pi:min(): ", torch.min(beta.pi))
 --    print("beta.pi:max(): ", torch.max(beta.pi))
@@ -267,6 +271,26 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
 --
 
     return LE, torch.sum(LC), accuracy
+end
+
+function VBSSparams:test(input, target, model, parameters, criterion, opt)
+    local accuracy = 0
+    local error = 0
+    local p = parameters:narrow(1,1, opt.W)
+    for i = 1, opt.S do
+        local e, z = self:sampleTheta()
+        local w, pz
+        if opt.cuda then
+            w = torch.cmul(torch.add(self.means:cuda(), torch.cmul(self.stdv:cuda(), e)), z)
+        else
+            w = torch.cmul(torch.add(self.means, torch.cmul(self.stdv, e)), z)
+        end
+    end
+    local outputs = model:forward(input)
+    error = error + criterion:forward(outputs, target)
+    accuracy = accuracy + u.get_accuracy(outputs, target)
+
+    return error:div(opt.S), accuracy:div(opt.S)
 end
 
 return VBSSparams
