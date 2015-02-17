@@ -216,8 +216,10 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
 --    print("var_vargrads: ", torch.mean(vb_vargrads), torch.var(vb_vargrads))
 --    print("vb_mugrads: ", torch.min(vb_mugrads), torch.max(vb_mugrads))
 --    print("vb_pigrads: ", torch.min(pi_grads), torch.max(pi_grads))
-    print("VLEG: ", vleg:norm())
-    print("VLCG: ", vlcg:norm())
+--    print("VLEG: ", vleg:norm())
+--    print("VLCG: ", vlcg:norm())
+    print("MLEG: ", mleg:norm())
+    print("MLCG: ", mlcg:norm())
     mleg = torch.add(mleg, mlcg)
     vleg = torch.add(vleg, vlcg)
     pleg = torch.add(pleg, plcg)
@@ -255,8 +257,28 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
         }
         nrlogger:plot()
     end
+    print("beta.means:min(): ", torch.min(beta.means))
+    print("beta.means:max(): ", torch.max(beta.means))
+    print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
+    print("beta.vars:avg(): ", torch.mean(torch.exp(beta.lvars)))
+    print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
 
     return LE, torch.sum(LC), accuracy
+end
+
+function VBSSparams:test(model, parameters, data)
+    local p = parameters:narrow(1,1, opt.W)
+    for i = 1, opt.S do
+        local e, z = self:sampleTheta()
+        local w, pz
+        if opt.cuda then
+            w = torch.cmul(torch.add(self.means:cuda(), torch.cmul(self.stdv:cuda(), e)), z)
+        else
+            w = torch.cmul(torch.add(self.means, torch.cmul(self.stdv, e)), z)
+        end
+    end
+
+
 end
 
 return VBSSparams

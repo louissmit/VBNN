@@ -14,8 +14,8 @@ require 'cunn'
 local mnist = require('mnist')
 opt = {}
 opt.threads = 1
-opt.network_to_load = "gravesbaseline5"
-opt.network_name = "asdfas"
+opt.network_to_load = ""
+opt.network_name = "ssvbrepro"
 opt.type = "ssvb"
 opt.cuda = true
 opt.trainSize = 100
@@ -25,7 +25,7 @@ opt.plot = true
 opt.batchSize = 1
 opt.B = (opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}
-opt.S = 5
+opt.S = 10
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
 --opt.plotlc = true
@@ -33,15 +33,15 @@ opt.alpha = 0.8 -- NVIL
 -- fix seed
 torch.manualSeed(1)
 
-opt.mu_init = 0.0001
-opt.var_init = 0.01 --torch.sqrt(2/opt.hidden[1])--0.01
+opt.mu_init = 0.1
+opt.var_init = torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
 opt.pi_init = {
     mu = 5,
     var = 0.00001
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.00001,
+    learningRate = 0.000001,
 --    learningRateDecay = 0.01
 }
 --opt.lcvarState = {
@@ -49,8 +49,8 @@ opt.levarState = {
 --    learningRateDecay = 0.001
 --}
 opt.lemeanState = {
-    learningRate = 0.0000001,
-    learningRateDecay = 0.1
+    learningRate = 0.00000001,
+--    learningRateDecay = 0.01
 }
 --opt.lcmeanState = {
 --    learningRate = 0.000000001,
