@@ -15,7 +15,7 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "vbdiffinit"
+opt.network_name = "derp"
 opt.type = "vb"
 --opt.cuda = true
 opt.trainSize = 100
@@ -34,7 +34,7 @@ opt.alpha = 0.8 -- NVIL
 torch.manualSeed(3)
 
 opt.mu_init = 0.1
-opt.var_init = torch.pow(0.0075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
+opt.var_init = torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
 opt.pi_init = {
     mu = 5,
     var = 0.00001
