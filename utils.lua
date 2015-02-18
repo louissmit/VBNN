@@ -12,7 +12,7 @@ function utils.get_accuracy(outputs, targets)
    local correct, total = 0, 0
    for i = 1, targets:size(1) do
       total = total + 1
-      _, index = outputs[i]:max(1)
+      local _, index = outputs[i]:max(1)
       if index[1] == targets[i] then
          correct = correct + 1
       end
@@ -54,7 +54,7 @@ function utils.select_data(trainData, indices)
 end
 
 function utils.num_grad(to_check, func)
-    local epsilon = 0.000001--2*torch.sqrt(1e-20)*(1+torch.norm(to_check))
+    local epsilon = 2*torch.sqrt(1e-12)*(1+torch.norm(to_check))
     print("epsilon: ", epsilon)
     to_check:add(epsilon)
     local F1 = func()
@@ -90,6 +90,14 @@ function utils.safe_save(object, folder, name)
         os.execute('mv ' .. filename .. ' ' .. filename .. '.old')
     end
     torch.save(filename, object)
+end
+
+function utils.shallow_copy(t)
+    local t2 = {}
+    for k,v in pairs(t) do
+        t2[k] = v
+    end
+    return t2
 end
 
 return utils

@@ -15,8 +15,8 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "ssvbloooooooong"
-opt.type = "ssvb"
+opt.network_name = "derp"
+opt.type = "vb"
 --opt.cuda = true
 opt.trainSize = 100
 opt.testSize = 1000
@@ -31,31 +31,31 @@ opt.alpha = 0.8 -- NVIL
 --opt.plotlc = true
 --opt.viz = true
 -- fix seed
-torch.manualSeed(1)
+torch.manualSeed(3)
 
-opt.mu_init = 0.0001
-opt.var_init = 0.01 --torch.sqrt(2/opt.hidden[1])--0.01
+opt.mu_init = 0.1
+opt.var_init = torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
 opt.pi_init = {
     mu = 5,
     var = 0.00001
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.00000002,
+    learningRate = 0.00001,
 --    learningRateDecay = 0.01
 }
-opt.lcvarState = {
-    learningRate = 0.0000001,
-    learningRateDecay = 0.001
-}
+--opt.lcvarState = {
+--    learningRate = 0.0000001,
+--    learningRateDecay = 0.001
+--}
 opt.lemeanState = {
     learningRate = 0.00000001,
 --    learningRateDecay = 0.01
 }
-opt.lcmeanState = {
-    learningRate = 0.000000001,
-    learningRateDecay = 0.01
-}
+--opt.lcmeanState = {
+--    learningRate = 0.000000001,
+--    learningRateDecay = 0.01
+--}
 opt.lepiState = {
     learningRate = 0.00000001,
 }
@@ -163,7 +163,6 @@ function train(dataset, type)
     local avg_lc = 0
     local avg_le = 0
 
-    -- local vars
     local time = sys.clock()
 
     -- do one epoch
@@ -188,23 +187,13 @@ function train(dataset, type)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
-            print("beta.means:min(): ", torch.min(beta.means))
-            print("beta.means:max(): ", torch.max(beta.means))
-            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
+
         elseif type == 'ssvb' then
 
             local le, lc, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             accuracy = accuracy + acc
             avg_lc = avg_lc + lc
             avg_le = avg_le + le
-            print("beta.means:min(): ", torch.min(beta.means))
-            print("beta.means:max(): ", torch.max(beta.means))
-            print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-            print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
-            print("beta.pi:min(): ", torch.min(beta.pi))
-            print("beta.pi:max(): ", torch.max(beta.pi))
-            print("beta.pi:avg(): ", torch.mean(beta.pi))
         else
             local err, acc = beta:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
             error = error + err
@@ -222,18 +211,6 @@ function train(dataset, type)
     time = sys.clock() - time
     time = time / opt.testSize
     print("<trainer> time to learn 1 sample = " .. (time*1000) .. 'ms')
-
-    if type == 'vb' or type == 'ssvb' then
-        print("beta.means:min(): ", torch.min(beta.means))
-        print("beta.means:max(): ", torch.max(beta.means))
-        print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-        print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
-    end
-    if type == 'ssvb' then
-        print("beta.pi:min(): ", torch.min(beta.pi))
-        print("beta.pi:max(): ", torch.max(beta.pi))
-        print("beta.pi:avg(): ", torch.mean(beta.pi))
-    end
 
     -- save/log current net
     beta:save(opt)
@@ -259,7 +236,6 @@ function test(dataset, type)
     local mu_acc = 0
     local avg_error = 0
     print("Testing!")
-    -- local vars
     local time = sys.clock()
     if type == 'vb' then
         local p = parameters:narrow(1,1, opt.W)
@@ -322,7 +298,7 @@ while true do
     if opt.viz then
 --        viz.show_input_parameters(parameters, parameters:size(), opt)
         viz.show_input_parameters(beta.means, beta.means:size(), 'means', opt)
-        viz.show_input_parameters(beta.lvars, beta.lvars:size(), 'vars', opt)
+        viz.show_input_parameters(beta.vars, beta.vars:size(), 'vars', opt)
         if type == 'ssvb' then
             viz.show_input_parameters(beta.p, beta.p:size(), 'pi', opt)
         end
