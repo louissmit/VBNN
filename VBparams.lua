@@ -42,6 +42,8 @@ function VBparams:load(model_dir)
     self.smState = torch.load(paths.concat(dir, 'smp'))
     self.W = torch.load(paths.concat(model_dir, 'opt')).W
     self.w = torch.Tensor(self.W)
+
+    parameters:narrow(1, self.W, parameters:size(1)-self.W):copy(self.smp) -- softmax layer params
     return self
 end
 
@@ -60,9 +62,9 @@ function VBparams:save(opt)
 end
 
 function VBparams:sampleW()
---    return randomkit.normal(self.means, torch.sqrt(torch.exp(self.lvars)))
-    randomkit.normal(self.w, self.means, torch.sqrt(torch.exp(self.lvars)))
-    return self.w
+    return randomkit.normal(self.means, torch.sqrt(torch.exp(self.lvars)))
+--    randomkit.normal(self.w, self.means, torch.sqrt(torch.exp(self.lvars)))
+--    return self.w
 end
 
 function VBparams:compute_prior()
@@ -184,6 +186,26 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
 
     return torch.sum(LC), LE, accuracy
+end
+
+function VBparams:test(input, target, model, parameters, criterion, opt)
+    local accuracy = 0
+    local error = 0
+    local p = parameters:narrow(1,1, opt.W)
+    local w
+
+    for i = 1, opt.testSamples do
+--        w = self:sampleW()
+        w = self.means
+        if opt.cuda then
+            w = w:cuda()
+        end
+        p:copy(w)
+        local outputs = model:forward(input)
+        error = error + criterion:forward(outputs, target)
+        accuracy = accuracy + u.get_accuracy(outputs, target)
+    end
+    return error/opt.testSamples, accuracy/opt.testSamples
 end
 
 return VBparams

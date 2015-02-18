@@ -266,7 +266,9 @@ function VBSSparams:train(inputs, targets, model, criterion, parameters, gradPar
     return LE, torch.sum(LC), accuracy
 end
 
-function VBSSparams:test(model, parameters, data)
+function VBSSparams:test(input, target, model, parameters, criterion, opt)
+    local accuracy = 0
+    local error = 0
     local p = parameters:narrow(1,1, opt.W)
     for i = 1, opt.S do
         local e, z = self:sampleTheta()
@@ -276,9 +278,12 @@ function VBSSparams:test(model, parameters, data)
         else
             w = torch.cmul(torch.add(self.means, torch.cmul(self.stdv, e)), z)
         end
+        local outputs = model:forward(input)
+        error = error + criterion:forward(outputs, target)
+        accuracy = accuracy + u.get_accuracy(outputs, target)
     end
 
-
+    return error/opt.testSamples, accuracy/opt.testSamples
 end
 
 return VBSSparams

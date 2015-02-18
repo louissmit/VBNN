@@ -14,10 +14,10 @@ require 'cunn'
 local mnist = require('mnist')
 opt = {}
 opt.threads = 1
-opt.network_to_load = ""
-opt.network_name = "ssvbrepro"
-opt.type = "ssvb"
-opt.cuda = true
+opt.network_to_load = "gravess"
+opt.network_name = "ttttttt"
+opt.type = "vb"
+--opt.cuda = true
 opt.trainSize = 100
 opt.testSize = 1000
 
@@ -26,12 +26,13 @@ opt.batchSize = 1
 opt.B = (opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}
 opt.S = 10
+opt.testSamples = 5
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
 --opt.plotlc = true
 --opt.viz = true
 -- fix seed
-torch.manualSeed(1)
+--torch.manualSeed(3)
 
 opt.mu_init = 0.1
 opt.var_init = torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
@@ -278,13 +279,21 @@ function test(dataset, type)
             inputs = inputs:cuda()
             targets = targets:cuda()
         end
+        if type == 'vb' then
 
-        -- test samples
-        local preds = model:forward(inputs)
---        print(torch.gt(model:get(3).output, 0):sum())
-        accuracy = accuracy + u.get_accuracy(preds, targets)
-        local err = criterion:forward(preds, targets)
-        avg_error = avg_error + err
+            local err, acc = beta:test(inputs, targets, model, parameters, criterion, opt)
+            accuracy = accuracy + acc
+            avg_error = avg_error + err
+        else
+            -- test samples
+            local preds = model:forward(inputs)
+            --        print(torch.gt(model:get(3).output, 0):sum())
+            accuracy = accuracy + u.get_accuracy(preds, targets)
+            local err = criterion:forward(preds, targets)
+
+            avg_error = avg_error + err
+        end
+
 
     end
 
@@ -308,7 +317,7 @@ nrlogger = optim.Logger(paths.concat(opt.network_name, 'nr.log'))
 
 while true do
     -- train/test
-    local trainaccuracy, trainerror, lc, le = train(trainData, opt.type)
+--    local trainaccuracy, trainerror, lc, le = train(trainData, opt.type)
     if opt.viz then
 --        viz.show_input_parameters(parameters, parameters:size(), opt)
         viz.show_input_parameters(beta.means, beta.means:size(), 'means', opt)
@@ -321,6 +330,7 @@ while true do
     print("TRAINACCURACY: ", trainaccuracy, trainerror)
     local testaccuracy, testerror = test(testData, opt.type)
     print("TESTACCURACY: ", testaccuracy, testerror)
+exit()
 
 --    viz.graph_things(accuracies)
     accLogger:add{['% accuracy (train set)'] = trainaccuracy, ['% accuracy (test set)'] = testaccuracy }
