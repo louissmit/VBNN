@@ -1,15 +1,29 @@
-local VBLinear, parent = torch.class('nn.VBLinear', 'nn.Linear')
 require 'randomkit'
+require 'cunn'
+require 'optim'
+local u = require('utils')
 
-function VBLinear:__init(inputSize, outputSize)
-    parent.__init(self)
-    self.means = torch.Tensor(outputSize, inputSize)
-    self.lvars = torch.Tensor(outputSize, inputSize)
+local VBLinear, parent = torch.class('nn.VBLinear', 'nn.Linear')
+
+function VBLinear:__init(inputSize, outputSize, opt)
+    parent.__init(self, inputSize, outputSize)
+    self.means = torch.Tensor(outputSize, inputSize):fill(opt.mu_init)
+    self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(opt.var_init))
+    self.accGradSquared = torch.Tensor(outputSize, inputSize)
     self.W = outputSize*inputSize
+    self.meanState = u.shallow_copy(opt.meanState)
+    self.varState = u.shallow_copy(opt.varState)
 end
 
-function VBLinear:sample()
-    self.weights = randomkit.normal(self.w, self.means, torch.sqrt(torch.exp(self.lvars)))
+function VBLinear:sample(opt)
+    local sample = randomkit.normal(
+        self.means:float(),
+        torch.sqrt(torch.exp(self.lvars:float()))
+    ):float()
+    if opt.cuda then
+        sample = sample:cuda()
+    end
+    self.weight:copy(sample:resizeAs(self.weight))
 end
 
 function VBLinear:compute_prior()
@@ -23,13 +37,46 @@ function VBLinear:compute_prior()
     return self.mu_hat, self.var_hat
 end
 
-function VBLinear:compute_mugrads(gradsum, opt)
+function VBLinear:compute_mugrads(opt)
     local lcg = torch.add(self.means, -self.mu_hat):div(opt.B*self.var_hat)
-    return gradsum:div(opt.S), lcg
+    return self.gradWeight:div(opt.S), lcg
 end
 
-function VBLinear:compute_vargrads(LN_squared, opt)
+function VBLinear:compute_vargrads(opt)
     local vars = torch.exp(self.lvars)
     local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):div(2*opt.B)
-    return LN_squared:div(2*opt.S):cmul(vars), lcg:cmul(vars)
+    return self.accGradSquared:div(2*opt.S):cmul(vars), lcg:cmul(vars)
 end
+
+--function VBLinear:updateGradInput(input, gradOutput)
+--end
+
+function VBLinear:accGradParameters(input, gradOutput, scale)
+    parent.accGradParameters(self, input, gradOutput, scale)
+    self.accGradSquared:add(torch.pow(torch.mm(gradOutput:t(), input), 2))
+end
+
+function VBLinear:update(opt)
+    self:compute_prior()
+    local mleg, mlcg = self:compute_mugrads(opt)
+    local mugrad = torch.add(mleg, mlcg)
+    local vleg, vlcg = self:compute_vargrads(opt)
+    local vgrad = torch.add(vleg, vlcg)
+    local x, _, update = optim.adam(
+        function(_) return LD, mugrad:mul(1/opt.batchSize) end,
+        self.means,
+        self.meanState)
+    local mu_normratio = torch.norm(update)/torch.norm(x)
+    local x, _, update = optim.adam(
+        function(_) return LD, vgrad:mul(1/opt.batchSize) end,
+        self.lvars,
+        self.varState)
+    local var_normratio = torch.norm(update)/torch.norm(x)
+    local vars = torch.exp(self.lvars)
+--    print("var: ", vars:min(), vars:mean(), vars:max())
+--    print("means: ", self.means:min(), self.means:mean(), self.means:max())
+    print(mu_normratio, var_normratio)
+end
+-- we do not need to accumulate parameters when sharing
+VBLinear.sharedAccUpdateGradParameters = VBLinear.accUpdateGradParameters
+

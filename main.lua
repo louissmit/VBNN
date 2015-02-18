@@ -1,36 +1,10 @@
-require 'cunn'
+require 'nn'
 require 'optim'
 local mnist = require('mnist')
 local u = require('utils')
+local Convnet = require('convnet')
 local main = {}
-
-function main:buildModel(opt)
-    local input_size = opt.geometry[1]*opt.geometry[2]
-    local model = nn.Sequential()
-    model:add(nn.Reshape(input_size))
-    model:add(nn.Linear(input_size, opt.hidden[1]))
-    --model:get(2).bias:zero()
-    --model:get(2):reset(opt.var_init)
-    model:add(nn.ReLU())
-    opt.W = input_size*opt.hidden[1]+opt.hidden[1]--parameters:size(1)
-    for i = 2, #opt.hidden do
-        model:add(nn.Linear(opt.hidden[i-1], opt.hidden[i]))
-        --    model:get(i*2).bias:zero()
-        model:add(nn.ReLU())
-        opt.W = opt.W + opt.hidden[i-1]*opt.hidden[i]+opt.hidden[i]
-    end
-    model:add(nn.Linear(opt.hidden[#opt.hidden], #opt.classes))
-    model:add(nn.LogSoftMax())
-
-    local criterion = nn.ClassNLLCriterion()
-    if opt.cuda then
-        model:cuda()
-        criterion:cuda()
-    end
-    local parameters, gradParameters = model:getParameters()
-
-    return model, parameters, gradParameters, criterion
-end
+include('VBLinear.lua')
 
 function main:buildDataset(opt)
     local trainData = mnist.traindataset()
@@ -42,7 +16,7 @@ function main:buildDataset(opt)
     return trainData, testData
 end
 
-function main:train(model, parameters, gradParameters, criterion,  dataset, opt)
+function main:train(net, dataset, opt)
     local accuracy = 0
     local error = 0
 
@@ -55,14 +29,25 @@ function main:train(model, parameters, gradParameters, criterion,  dataset, opt)
         end
         collectgarbage()
         -- reset gradients
-        gradParameters:zero()
-
-        local outputs = model:forward(inputs)
-        local df_do = criterion:backward(outputs, targets)
-        model:backward(inputs, df_do)
-        error = error + criterion:forward(outputs, targets)
-        accuracy = accuracy + u.get_accuracy(outputs, targets)
-        local x, _, update = optim.adam(function(_) return error, gradParameters:mul(1/opt.batchSize) end, parameters, opt.meanState)
+        net:resetGradients()
+        if opt.type == 'vb' then
+            local sample_err = 0
+            local sample_acc = 0
+            for i = 1, opt.S do
+                net:sample()
+                local err, acc = net:run(inputs, targets)
+                sample_err = sample_err + err
+                sample_acc = sample_acc + acc
+            end
+            accuracy = accuracy + sample_acc/opt.S
+            error = error + sample_err/opt.S
+            net:update(opt)
+        else
+            local err, acc = net:run(inputs, targets)
+            accuracy = accuracy + acc
+            error = error + err
+            net:update(opt)
+        end
         xlua.progress(t, opt.trainSize)
     end
     return accuracy/opt.B, error/opt.B
@@ -70,14 +55,14 @@ end
 
 function main:run()
     local opt = require('config')
-    torch.manualSeed(3)
+    torch.manualSeed(1)
     torch.setnumthreads(opt.threads)
     print('<torch> set nb of threads to ' .. torch.getnumthreads())
     torch.setdefaulttensortype('torch.FloatTensor')
-    local model, parameters, gradParameters, criterion = self:buildModel(opt)
+    local net = Convnet:buildModel(opt)
     local trainSet, testSet = self:buildDataset(opt)
     while true do
-        local acc, err = self:train(model, parameters, gradParameters, criterion, trainSet, opt)
+        local acc, err = self:train(net, trainSet, opt)
         print(acc, err)
     end
 
