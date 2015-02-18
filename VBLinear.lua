@@ -1,16 +1,20 @@
 require 'randomkit'
 require 'cunn'
 require 'optim'
+require 'torch'
 local u = require('utils')
 
 local VBLinear, parent = torch.class('nn.VBLinear', 'nn.Linear')
 
 function VBLinear:__init(inputSize, outputSize, opt)
     parent.__init(self, inputSize, outputSize)
-    self.means = torch.Tensor(outputSize, inputSize):fill(opt.mu_init)
+--    self.means = torch.Tensor(outputSize, inputSize):fill(opt.mu_init)
     self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(opt.var_init))
-    self.accGradSquared = torch.Tensor(outputSize, inputSize)
+    self.accGradSquared = torch.Tensor(outputSize, inputSize):float()
     self.W = outputSize*inputSize
+    self.means = randomkit.normal(
+        torch.Tensor(self.W):zero(),
+        torch.Tensor(self.W):fill(opt.mu_init)):float():resizeAs(self.weight)
     self.meanState = u.shallow_copy(opt.meanState)
     self.varState = u.shallow_copy(opt.varState)
 end
@@ -48,6 +52,10 @@ function VBLinear:compute_vargrads(opt)
     return self.accGradSquared:div(2*opt.S):cmul(vars), lcg:cmul(vars)
 end
 
+function VBLinear:clamp_to_map()
+    self.weight:copy(self.means)
+end
+
 --function VBLinear:updateGradInput(input, gradOutput)
 --end
 
@@ -73,8 +81,8 @@ function VBLinear:update(opt)
         self.varState)
     local var_normratio = torch.norm(update)/torch.norm(x)
     local vars = torch.exp(self.lvars)
---    print("var: ", vars:min(), vars:mean(), vars:max())
---    print("means: ", self.means:min(), self.means:mean(), self.means:max())
+    print("var: ", vars:min(), vars:mean(), vars:max())
+    print("means: ", self.means:min(), self.means:mean(), self.means:max())
     print(mu_normratio, var_normratio)
 end
 -- we do not need to accumulate parameters when sharing
