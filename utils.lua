@@ -71,11 +71,7 @@ end
 function utils.isnan(x) return x ~= x end
 
 function utils.norm_pdf(x, mu, sigma)
-    print(sigma:mean())
     local sigmasq = torch.pow(sigma,2)
-    print(x:mean())
-    print(mu:mean())
-    print(sigmasq:mean())
     local exp = torch.exp(torch.cdiv(torch.pow((x-mu), 2), sigmasq):mul(-0.5))
     exp:cdiv(torch.sqrt(sigmasq:mul(2*math.pi)))
     return exp
@@ -98,6 +94,17 @@ function utils.shallow_copy(t)
         t2[k] = v
     end
     return t2
+end
+
+function utils.shuffle(tensor)
+    return torch.randperm(tensor:size(1)):apply(function(i)
+        return tensor[i]
+    end)
+end
+
+function utils.file_exists(name)
+    local f=io.open(name,"r")
+    if f~=nil then io.close(f) return true else return false end
 end
 
 return utils

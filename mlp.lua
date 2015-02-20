@@ -1,17 +1,19 @@
 local u = require('utils')
 local inspect = require('inspect')
-require 'cunn'
+require 'nn'
 
 local mlp = {}
 
 function mlp:buildModel(opt)
     self.opt = opt
 
+    self.vb_indices = {}
     local input_size = opt.geometry[1]*opt.geometry[2]
     self.model = nn.Sequential()
-    self.model:add(nn.Reshape(input_size))
+    self.model:add(nn.View(input_size))
     if opt.type == 'vb' then
         self.model:add(nn.VBLinear(input_size, opt.hidden[1], opt))
+        table.insert(self.vb_indices, 2)
     else
         self.model:add(nn.Linear(input_size, opt.hidden[1]))
     end
@@ -19,6 +21,7 @@ function mlp:buildModel(opt)
     for i = 2, #opt.hidden do
         if opt.type == 'vb' then
             self.model:add(nn.VBLinear(opt.hidden[i-1], opt.hidden[i], opt))
+            table.insert(self.vb_indices, 2*i)
         else
             self.model:add(nn.Linear(opt.hidden[i-1], opt.hidden[i]))
         end
@@ -39,6 +42,7 @@ function mlp:buildModel(opt)
     print("nr. of parameters: ", parameters:size(1))
 
     self.state = u.shallow_copy(opt.state)
+    self:reset(opt)
     return self
 end
 
@@ -47,7 +51,21 @@ function mlp:resetGradients()
 end
 
 function mlp:sample()
-    self.model:get(2):sample(self.opt)
+    for _, i in pairs(self.vb_indices) do
+        self.model:get(i):sample(self.opt)
+    end
+
+end
+
+function mlp:reset(opt)
+    for _, i in pairs(self.vb_indices) do
+        local weight = self.model:get(i).weight
+        local W = weight:size(1)*weight:size(2)
+        local sample = randomkit.normal(
+            torch.Tensor(W):zero(),
+            torch.Tensor(W):fill(opt.mu_init)):float():resizeAs(weight:float())
+        weight:copy(sample)
+    end
 end
 
 function mlp:run(inputs, targets)
@@ -61,9 +79,33 @@ end
 
 function mlp:test(input, target)
     if self.opt.type == 'vb' then
-        self.model:get(2):clamp_to_map()
+        if self.opt.quicktest then
+            for _, i in pairs(self.vb_indices) do
+                self.model:get(i):clamp_to_map()
+            end
+            return self:run(input, target)
+        else
+            local error = 0
+            local accuracy = 0
+            for _ = 1, self.opt.testSamples do
+                self:sample()
+                local err, acc = self:run(input, target)
+                error = error + err
+                accuracy = accuracy + acc
+            end
+            return error/self.opt.testSamples, accuracy/self.opt.testSamples
+        end
+    else
+        return self:run(input, target)
     end
-    return self:run(input, target)
+end
+
+function mlp:calc_lc(opt)
+    local lc = 0
+    for _, i in pairs(self.vb_indices) do
+        lc = lc + self.model:get(i):calc_lc(opt):sum()
+    end
+    return lc
 end
 
 function mlp:update(opt)
@@ -72,9 +114,11 @@ function mlp:update(opt)
         self.parameters,
         self.state)
     local normratio = torch.norm(update)/torch.norm(x)
---    print("normartio:", normratio)
+    print("normartio:", normratio)
     if opt.type == 'vb' then
-        self.model:get(2):update(opt)
+        for _, i in pairs(self.vb_indices) do
+            self.model:get(i):update(opt)
+        end
     end
 end
 

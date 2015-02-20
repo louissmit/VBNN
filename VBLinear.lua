@@ -51,6 +51,12 @@ function VBLinear:compute_vargrads(opt)
     local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):div(2*opt.B)
     return self.accGradSquared:div(2*opt.S):cmul(vars), lcg:cmul(vars)
 end
+function VBLinear:calc_lc(opt)
+    local vars = torch.exp(self.lvars)
+    local LCfirst = torch.add(-torch.log(torch.sqrt(vars)), torch.log(torch.sqrt(self.var_hat)))
+    local LCsecond = torch.add(self.mu_sqe, torch.add(vars, -self.var_hat)):div(2*self.var_hat)
+    return torch.add(LCfirst, LCsecond):mul(1/opt.B)
+end
 
 function VBLinear:clamp_to_map()
     self.weight:copy(self.means)
