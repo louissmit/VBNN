@@ -4,11 +4,11 @@ opt = {}
 opt.classes = {'0','1','2','3','4','5','6','7','8','9'}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "nnperm"
+opt.network_name = "bacteria"
 opt.type = ""
 opt.cuda = true
-opt.trainSize = 100
-opt.testSize = 1000
+opt.trainSize = 90
+opt.testSize = 9
 
 opt.plot = true
 opt.batchSize = 1
@@ -20,7 +20,8 @@ opt.quicktest = true
 --opt.normcheck = true
 --opt.plotlc = true
 --opt.viz = true
-opt.geometry = {28,28}
+--opt.geometry = {28,28}
+opt.input_size = 2283
 
 opt.mu_init = 0.1
 opt.var_init = torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01

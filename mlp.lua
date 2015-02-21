@@ -8,14 +8,13 @@ function mlp:buildModel(opt)
     self.opt = opt
 
     self.vb_indices = {}
-    local input_size = opt.geometry[1]*opt.geometry[2]
     self.model = nn.Sequential()
-    self.model:add(nn.View(input_size))
+    self.model:add(nn.View(opt.input_size))
     if opt.type == 'vb' then
-        self.model:add(nn.VBLinear(input_size, opt.hidden[1], opt))
+        self.model:add(nn.VBLinear(opt.input_size, opt.hidden[1], opt))
         table.insert(self.vb_indices, 2)
     else
-        self.model:add(nn.Linear(input_size, opt.hidden[1]))
+        self.model:add(nn.Linear(opt.input_size, opt.hidden[1]))
     end
     self.model:add(nn.ReLU())
     for i = 2, #opt.hidden do

@@ -20,19 +20,6 @@ function utils.get_accuracy(outputs, targets)
    return (correct / total)*100
 end
 
-function utils.create_minibatch(dataset, index, batchSize, n, geometry)
-   local inputs = torch.Tensor(batchSize,1,geometry[1],geometry[2])
-   local targets = torch.Tensor(batchSize)
-   local k = 1
-   for i = index, math.min(index+batchSize-1, n) do
-      -- load new sample
-      inputs[k] = dataset.inputs:select(1,i)
-      targets[k] = dataset.targets[i]+1
-      k = k + 1
-   end
-   return inputs, targets
-end
-
 function utils.normalize(data)
    local std = data:std()
    local mean = data:mean()
@@ -75,8 +62,6 @@ function utils.norm_pdf(x, mu, sigma)
     local exp = torch.exp(torch.cdiv(torch.pow((x-mu), 2), sigmasq):mul(-0.5))
     exp:cdiv(torch.sqrt(sigmasq:mul(2*math.pi)))
     return exp
-
---    return torch.exp(-.5 * (x-mu)*(x-mu)/(sigma*sigma)) / torch.sqrt(2.0*math.pi*sigma*sigma)
 end
 
 function utils.safe_save(object, folder, name)

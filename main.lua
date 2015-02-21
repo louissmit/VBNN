@@ -9,6 +9,7 @@ local main = {}
 include('VBLinear.lua')
 torch.setdefaulttensortype('torch.FloatTensor')
 
+
 function main:train(net, dataset, opt)
     local accuracy = 0
     local error = 0
@@ -16,7 +17,7 @@ function main:train(net, dataset, opt)
     self.indices = self.indices or torch.range(1, opt.trainSize, opt.batchSize)
     u.shuffle(self.indices):apply(function(batch_index)
         --      local batchtime = sys.clock()
-        local inputs, targets = u.create_minibatch(dataset, batch_index, opt.batchSize, opt.trainSize, opt.geometry)
+        local inputs, targets = dataset:create_minibatch(batch_index, opt.batchSize, opt.trainSize, opt.geometry)
         if opt.cuda then
             inputs = inputs:cuda()
             targets = targets:cuda()
@@ -45,6 +46,7 @@ function main:train(net, dataset, opt)
         end
         if opt.type == 'vb' then
             local lc = net:calc_lc(opt)
+            Log:add('lc', lc)
             print('LC: ', lc)
         end
         xlua.progress(t, opt.trainSize)
@@ -61,7 +63,7 @@ function main:test(net, dataset, opt)
         -- disp progress
         xlua.progress(t, opt.testSize)
 
-        local inputs, targets = u.create_minibatch(dataset, t, opt.batchSize, opt.testSize, opt.geometry)
+        local inputs, targets = dataset:create_minibatch(t, opt.batchSize, opt.testSize, opt.geometry)
         if opt.cuda then
             inputs = inputs:cuda()
             targets = targets:cuda()
@@ -76,35 +78,30 @@ end
 
 function main:run()
     local opt = require('config')
-    accLogger = optim.Logger(paths.concat(opt.network_name, 'acc.log'))
-    errLogger = optim.Logger(paths.concat(opt.network_name, 'error.log'))
-    lcLogger = optim.Logger(paths.concat(opt.network_name, 'lc.log'))
+    -- global logger
+    Log = require('logger'):init(opt.network_name)
     torch.manualSeed(3)
     torch.setnumthreads(opt.threads)
     print('<torch> set nb of threads to ' .. torch.getnumthreads())
 --    local net = Convnet:buildModel(opt)
     local net = MLP:buildModel(opt)
-    local trainSet, testSet = data.getMnist()
+--    local trainSet, testSet = data.getMnist()
+    local trainSet, testSet = data.getBacteriaFold(2, 10)
 
     while true do
         local trainAccuracy, trainError = self:train(net, trainSet, opt)
         print(trainAccuracy, trainError)
         local testAccuracy, testError = self:test(net, testSet, opt)
         print(testAccuracy, testError)
-        accLogger:add{['train acc.'] = trainAccuracy, ['test acc.'] = testAccuracy}
-        accLogger:style{['train acc.'] = '-', ['test acc.'] = '-'}
-        errLogger:add{['train err.'] = trainError, ['test err.'] = testError}
-        errLogger:style{['train err.'] = '-', ['test err.'] = '-' }
+        Log:add('devacc', testAccuracy)
+        Log:add('trainacc', trainAccuracy)
+        Log:add('deverr', testError)
+        Log:add('trainerr', trainError)
+        Log:flush()
+
         if opt.type == 'vb' then
             local lc = net:calc_lc(opt)
             print('LC: ', lc)
-            lcLogger:add{['LC'] = lc}
-            lcLogger:style{['LC'] = '-' }
-        end
-        if opt.plot then
-            accLogger:plot()
-            errLogger:plot()
-            lcLogger:plot()
         end
         u.safe_save(net, opt.network_name, 'model')
 --          net:save()
@@ -113,14 +110,15 @@ function main:run()
 end
 main:run()
 --local net = MLP:load('vsadf2')
-local net = torch.load('vsadf2/model')
-local opt = net.opt
-opt.testSamples = 5
-opt.quicktest = false
+--local net = torch.load('vsadf2/model')
+--local opt = net.opt
+--opt.testSamples = 5
+--opt.quicktest = false
 --local opt = require('config')
-local trainSet, testSet = data.getMnist()
-print(net.model)
-print(testSet)
-print(main:test(net, testSet, opt))
+--local trainSet, testSet = data.getMnist()
+--local trainSet, testSet = data.getBacteriaFold(1, 10)
+--print(net.model)
+--print(testSet)
+--print(main:test(net, testSet, opt))
 --
 return main
