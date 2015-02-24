@@ -44,11 +44,7 @@ function main:train(net, dataset, opt)
             error = error + err
             net:update(opt)
         end
-        if opt.type == 'vb' then
-            local lc = net:calc_lc(opt)
-            Log:add('lc', lc)
-            print('LC: ', lc)
-        end
+
         xlua.progress(t, opt.trainSize)
         t = t + 1
     end)
@@ -58,12 +54,12 @@ end
 function main:test(net, dataset, opt)
     local error = 0
     local accuracy = 0
-    local B = opt.testSize/opt.batchSize
-    for t = 1,opt.testSize,opt.batchSize do
+    local B = opt.testSize/opt.testBatchSize
+    for t = 1,opt.testSize,opt.testBatchSize do
         -- disp progress
         xlua.progress(t, opt.testSize)
 
-        local inputs, targets = dataset:create_minibatch(t, opt.batchSize, opt.testSize, opt.geometry)
+        local inputs, targets = dataset:create_minibatch(t, opt.testBatchSize, opt.testSize, opt.geometry)
         if opt.cuda then
             inputs = inputs:cuda()
             targets = targets:cuda()
@@ -76,6 +72,42 @@ function main:test(net, dataset, opt)
     return accuracy/B, error/B
 end
 
+function main:crossvalidate()
+    local opt = require('config')
+    local max_epoch = 10
+    local totalacc = 0
+    local totalerr = 0
+    local i = 1
+    local k = 10
+    Log = require('logger'):init(opt.network_name)
+    while i <= k do
+        local net = MLP:buildModel(opt)
+        local trainAccuracy, trainError
+        local testAccuracy, testError
+        local t = 1
+        while t <= max_epoch do
+            local trainSet, testSet = data.getBacteriaFold(i, k)
+            trainAccuracy, trainError = self:train(net, trainSet, opt)
+            testAccuracy, testError = self:test(net, testSet, opt)
+            Log:add('devacc-fold='..i, testAccuracy)
+            Log:add('trainacc-fold='..i, trainAccuracy)
+            Log:add('deverr-fold='..i, testError)
+            Log:add('trainerr-fold='..i, trainError)
+            if opt.type == 'vb' then
+                local lc = net:calc_lc(opt)
+                Log:add('lc-fold='..i, lc)
+            end
+            Log:flush()
+            t = t + 1
+        end
+        u.safe_save(net, opt.network_name, 'model-fold='..i)
+        totalacc = totalacc + testAccuracy
+        totalerr = totalerr + testError
+        i = i + 1
+    end
+    return totalacc/k, totalerr/k
+end
+
 function main:run()
     local opt = require('config')
     -- global logger
@@ -86,7 +118,7 @@ function main:run()
 --    local net = Convnet:buildModel(opt)
     local net = MLP:buildModel(opt)
 --    local trainSet, testSet = data.getMnist()
-    local trainSet, testSet = data.getBacteriaFold(2, 10)
+    local trainSet, testSet = data.getBacteriaFold(1, 10)
 
     while true do
         local trainAccuracy, trainError = self:train(net, trainSet, opt)
@@ -97,18 +129,20 @@ function main:run()
         Log:add('trainacc', trainAccuracy)
         Log:add('deverr', testError)
         Log:add('trainerr', trainError)
-        Log:flush()
 
         if opt.type == 'vb' then
             local lc = net:calc_lc(opt)
+            Log:add('lc', lc)
             print('LC: ', lc)
         end
         u.safe_save(net, opt.network_name, 'model')
 --          net:save()
+        Log:flush()
     end
 
 end
-main:run()
+--main:run()
+print(main:crossvalidate())
 --local net = MLP:load('vsadf2')
 --local net = torch.load('vsadf2/model')
 --local opt = net.opt

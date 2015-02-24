@@ -33,7 +33,7 @@ end
 
 
 function data.getBacteriaFold(i, k)
-    local d = torch.load('gutbacteria_shuffled.torch')
+    local d = torch.load('gutbacteria_shuffled_binary.torch')
     local nr_of_samples = d.inputs:size(1)
 
     local create_minibatch = function(self, index, batchSize, n)

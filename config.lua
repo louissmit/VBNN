@@ -1,21 +1,23 @@
 local opt = {}
 
 opt = {}
-opt.classes = {'0','1','2','3','4','5','6','7','8','9'}
+--opt.classes = {'0','1','2','3','4','5','6','7','8','9'}
+opt.classes = {'0','1'}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "bacteria"
+opt.network_name = "nretest"
 opt.type = ""
 opt.cuda = true
 opt.trainSize = 90
 opt.testSize = 9
 
 opt.plot = true
-opt.batchSize = 1
-opt.B = (opt.trainSize/opt.batchSize)--*100
+opt.batchSize = 15
+opt.testBatchSize = 1
+opt.B = 6000--(opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100}
-opt.S = 10
-opt.testSamples = 3
+opt.S = 5
+opt.testSamples = 5
 opt.quicktest = true
 --opt.normcheck = true
 --opt.plotlc = true
@@ -35,17 +37,17 @@ opt.state = {
     learningRate = 0.00000001,
 }
 opt.varState = {
-    lambda = 1-1e-6,
-    learningRate = 0.00005,
+    lambda = 1-1e-8,
+    learningRate = 0.0005,
 --    learningRateDecay = 0.01
 }
 opt.meanState = {
-    lambda = 1-1e-6,
-    learningRate = 0.000000001,
---    learningRateDecay = 0.0001
+    lambda = 1-1e-8,
+    learningRate = 0.000001,
+--    learningRateDecay = 0.01
 }
 opt.piState = {
-    lambda = 1-1e-6,
+    lambda = 1-1e-8,
     learningRate = 0.00000001,
 }
 return opt
