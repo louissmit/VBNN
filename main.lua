@@ -115,10 +115,10 @@ function main:run()
     torch.manualSeed(3)
     torch.setnumthreads(opt.threads)
     print('<torch> set nb of threads to ' .. torch.getnumthreads())
---    local net = Convnet:buildModel(opt)
-    local net = MLP:buildModel(opt)
---    local trainSet, testSet = data.getMnist()
-    local trainSet, testSet = data.getBacteriaFold(1, 10)
+    local net = Convnet:buildModel(opt)
+--    local net = MLP:buildModel(opt)
+    local trainSet, testSet = data.getMnist()
+--    local trainSet, testSet = data.getBacteriaFold(1, 10)
 
     while true do
         local trainAccuracy, trainError = self:train(net, trainSet, opt)
@@ -130,6 +130,7 @@ function main:run()
         Log:add('deverr', testError)
         Log:add('trainerr', trainError)
 
+        print(opt.type)
         if opt.type == 'vb' then
             local lc = net:calc_lc(opt)
             Log:add('lc', lc)
@@ -141,8 +142,8 @@ function main:run()
     end
 
 end
---main:run()
-print(main:crossvalidate())
+main:run()
+--print(main:crossvalidate())
 --local net = MLP:load('vsadf2')
 --local net = torch.load('vsadf2/model')
 --local opt = net.opt

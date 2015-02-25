@@ -112,8 +112,8 @@ function mlp:update(opt)
         function(_) return _, self.gradParameters:mul(1/opt.batchSize) end,
         self.parameters,
         self.state)
---    local normratio = torch.norm(update)/torch.norm(x)
---    print("normratio:", normratio)
+    local normratio = torch.norm(update)/torch.norm(x)
+    print("normratio:", normratio)
     if opt.type == 'vb' then
         for _, i in pairs(self.vb_indices) do
             self.model:get(i):update(opt)

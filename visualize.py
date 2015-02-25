@@ -66,17 +66,17 @@ def update_plots(root, figures, types):
 #     figs = setup_plots(root, to_plot)
 #     update_plots(root, figs)
 if __name__ == "__main__":
-    root = "vtest"
+    root = "nmnist"
     # to_plot = ['trainerr', 'deverr']
     to_plot = {
         "error" :  ['trainerr', 'deverr'],
         "accuracy" :  ['trainacc', 'devacc'],
-        "lc" : ['lc'],
+        # "lc" : ['lc'],
         # "variance" : ['variance']
-        "variance" : ['mean variance', 'min. variance', 'max. variance'],
-        "means" : ['mean means', 'min. means', 'max. means'],
-        "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
-        "normratio" : ['mu normratio', 'var normratio']
+        # "variance" : ['mean variance', 'min. variance', 'max. variance'],
+        # "means" : ['mean means', 'min. means', 'max. means'],
+        # "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
+        # "normratio" : ['mu normratio', 'var normratio']
     }
     output_server("animated_line")
 

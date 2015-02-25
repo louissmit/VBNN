@@ -10,7 +10,7 @@ function VBLinear:__init(inputSize, outputSize, opt)
     parent.__init(self, inputSize, outputSize)
 --    self.means = torch.Tensor(outputSize, inputSize):fill(opt.mu_init)
     self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(opt.var_init))
-    self.accGradSquared = torch.Tensor(outputSize, inputSize):float()
+    self.accGradSquared = torch.Tensor(outputSize, inputSize):zero()
     self.W = outputSize*inputSize
     self.means = randomkit.normal(
         torch.Tensor(self.W):zero(),
@@ -76,6 +76,9 @@ function VBLinear:update(opt)
     local mugrad = torch.add(mleg, mlcg)
     local vleg, vlcg = self:compute_vargrads(opt)
     local vgrad = torch.add(vleg, vlcg)
+--    print(vgrad:min(), vgrad:mean(), vgrad:max())
+--    print(vleg:min(), vleg:mean(), vleg:max())
+--    print(vlcg:min(), vlcg:mean(), vlcg:max())
     local x, _, update = optim.adam(
         function(_) return LD, mugrad:mul(1/opt.batchSize) end,
         self.means,
@@ -92,15 +95,15 @@ function VBLinear:update(opt)
 --    Log:add('mlc grad', mlcg:norm())
 --    Log:add('mle grad', mleg:norm())
 --
---    print("var: ", vars:min(), vars:mean(), vars:max())
---    print("means: ", self.means:min(), self.means:mean(), self.means:max())
+    print("var: ", vars:min(), vars:mean(), vars:max())
+    print("means: ", self.means:min(), self.means:mean(), self.means:max())
 --    Log:add('mean variance', vars:mean())
 --    Log:add('min. variance', vars:min())
 --    Log:add('max. variance', vars:max())
 --    Log:add('mean means', self.means:mean())
 --    Log:add('min. means', self.means:min())
 --    Log:add('max. means', self.means:max())
-----    print(mu_normratio, var_normratio)
+    print(mu_normratio, var_normratio)
 --    Log:add('mu normratio', mu_normratio)
 --    Log:add('var normratio', var_normratio)
 end

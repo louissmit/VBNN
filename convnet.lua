@@ -16,15 +16,15 @@ function convnet:buildModel(opt)
     -- stage 3 : standard 2-layer MLP:
     self.model:add(nn.Reshape(64*2*2))
     if opt.type == 'vb' then
-        self.model:add(nn.VBLinear(64*2*2, 200, opt))
+        self.model:add(nn.VBLinear(64*2*2, 100, opt))
     else
-        self.model:add(nn.Linear(64*2*2, 200))
+        self.model:add(nn.Linear(64*2*2, 100))
     end
     self.model:add(nn.ReLU())
     if opt.type == 'vb' then
-        self.model:add(nn.VBLinear(200, #opt.classes, opt))
+        self.model:add(nn.VBLinear(100, #opt.classes, opt))
     else
-        self.model:add(nn.Linear(200, #opt.classes))
+        self.model:add(nn.Linear(100, #opt.classes))
     end
     self.model:add(nn.LogSoftMax())
 
@@ -37,6 +37,7 @@ function convnet:buildModel(opt)
     self.parameters = parameters
     self.gradParameters = gradParameters
     print("nr. of parameters: ", parameters:size(1))
+    print(self.model)
 
     self.state = u.shallow_copy(opt.state)
     return self
@@ -60,11 +61,39 @@ function convnet:run(inputs, targets)
     return error, accuracy
 end
 
+function convnet:test(input, target)
+    if self.opt.type == 'vb' then
+        if self.opt.quicktest then
+            self.model:get(8):clamp_to_map()
+            self.model:get(10):clamp_to_map()
+            return self:run(input, target)
+        else
+            local error = 0
+            local accuracy = 0
+            for _ = 1, self.opt.testSamples do
+                self:sample()
+                local err, acc = self:run(input, target)
+                error = error + err
+                accuracy = accuracy + acc
+            end
+            return error/self.opt.testSamples, accuracy/self.opt.testSamples
+        end
+    else
+        return self:run(input, target)
+    end
+end
+
+function convnet:calc_lc(opt)
+    return self.model:get(8):calc_lc(opt):sum() + self.model:get(10):calc_lc(opt):sum()
+end
+
 function convnet:update(opt)
     local x, _, update = optim.adam(
         function(_) return _, self.gradParameters:mul(1/opt.batchSize) end,
         self.parameters,
         self.state)
+    local normratio = torch.norm(update)/torch.norm(x)
+    print("normratio:", normratio)
     if opt.type == 'vb' then
         self.model:get(8):update(opt)
         self.model:get(10):update(opt)
