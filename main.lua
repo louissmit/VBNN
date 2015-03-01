@@ -28,9 +28,11 @@ function main:train(net, dataset, opt)
         if opt.type == 'vb' then
             local sample_err = 0
             local sample_acc = 0
+--            local best = math.huge
             for i = 1, opt.S do
                 net:sample()
-                local err, acc = net:run(inputs, targets)
+                local err, acc, new_best = net:run(inputs, targets, best)
+--                best = new_best
                 sample_err = sample_err + err
                 sample_acc = sample_acc + acc
             end
@@ -112,11 +114,16 @@ function main:run()
     local opt = require('config')
     -- global logger
     Log = require('logger'):init(opt.network_name)
-    torch.manualSeed(3)
+--    torch.manualSeed(3)
     torch.setnumthreads(opt.threads)
     print('<torch> set nb of threads to ' .. torch.getnumthreads())
-    local net = Convnet:buildModel(opt)
---    local net = MLP:buildModel(opt)
+    local net
+    if opt.network_to_load == "" then
+--        net = Convnet:buildModel(opt)
+        net = MLP:buildModel(opt)
+    else
+        net = torch.load(paths.concat(opt.network_to_load, 'model'))
+    end
     local trainSet, testSet = data.getMnist()
 --    local trainSet, testSet = data.getBacteriaFold(1, 10)
 
@@ -130,7 +137,6 @@ function main:run()
         Log:add('deverr', testError)
         Log:add('trainerr', trainError)
 
-        print(opt.type)
         if opt.type == 'vb' then
             local lc = net:calc_lc(opt)
             Log:add('lc', lc)

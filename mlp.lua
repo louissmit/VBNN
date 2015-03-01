@@ -46,7 +46,10 @@ function mlp:buildModel(opt)
 end
 
 function mlp:resetGradients()
-    self.gradParameters:zero()
+    self.model:zeroGradParameters()
+    for _, i in pairs(self.vb_indices) do
+        self.model:get(i):resetAcc(self.opt)
+    end
 end
 
 function mlp:sample()
@@ -67,13 +70,24 @@ function mlp:reset(opt)
     end
 end
 
-function mlp:run(inputs, targets)
+function mlp:run(inputs, targets, best)
     local outputs = self.model:forward(inputs)
     local df_do = self.criterion:backward(outputs, targets)
     self.model:backward(inputs, df_do)
     local error = self.criterion:forward(outputs, targets)
     local accuracy = u.get_accuracy(outputs, targets)
-    return error, accuracy
+--    if best ~= nil and error < best then
+--        best = error
+--        self:setBestGrads()
+--    end
+
+    return error, accuracy, best
+end
+
+function mlp:setBestGrads()
+    for _, i in pairs(self.vb_indices) do
+        self.model:get(i):setBestGrad()
+    end
 end
 
 function mlp:test(input, target)
