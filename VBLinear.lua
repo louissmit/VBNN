@@ -8,13 +8,14 @@ local VBLinear, parent = torch.class('nn.VBLinear', 'nn.Linear')
 
 function VBLinear:__init(inputSize, outputSize, opt)
     parent.__init(self, inputSize, outputSize)
---    self.means = torch.Tensor(outputSize, inputSize):fill(opt.mu_init)
     self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(opt.var_init))
     self.accGradSquared = torch.Tensor(outputSize, inputSize):float()
     self.W = outputSize*inputSize
     self.means = randomkit.normal(
         torch.Tensor(self.W):zero(),
         torch.Tensor(self.W):fill(opt.mu_init)):float():resizeAs(self.weight)
+    print(self.means:std())
+--    self.means = torch.Tensor(outputSize, inputSize):zero()
     self.meanState = u.shallow_copy(opt.meanState)
     self.varState = u.shallow_copy(opt.varState)
 end
@@ -70,6 +71,10 @@ function VBLinear:accGradParameters(input, gradOutput, scale)
     self.accGradSquared:add(torch.pow(torch.mm(gradOutput:t(), input), 2))
 end
 
+function VBLinear:resetAcc()
+    self.accGradSquared:zero()
+end
+
 function VBLinear:update(opt)
     self:compute_prior()
     local mleg, mlcg = self:compute_mugrads(opt)
@@ -87,22 +92,24 @@ function VBLinear:update(opt)
         self.varState)
     local var_normratio = torch.norm(update)/torch.norm(x)
     local vars = torch.exp(self.lvars)
---    Log:add('vlc grad', vlcg:norm())
---    Log:add('vle grad', vleg:norm())
---    Log:add('mlc grad', mlcg:norm())
---    Log:add('mle grad', mleg:norm())
---
---    print("var: ", vars:min(), vars:mean(), vars:max())
---    print("means: ", self.means:min(), self.means:mean(), self.means:max())
---    Log:add('mean variance', vars:mean())
---    Log:add('min. variance', vars:min())
---    Log:add('max. variance', vars:max())
---    Log:add('mean means', self.means:mean())
---    Log:add('min. means', self.means:min())
---    Log:add('max. means', self.means:max())
-----    print(mu_normratio, var_normratio)
---    Log:add('mu normratio', mu_normratio)
---    Log:add('var normratio', var_normratio)
+    print("var: ", vars:min(), vars:mean(), vars:max())
+    print("means: ", self.means:min(), self.means:mean(), self.means:max())
+    print('mu/var nr: ', mu_normratio, var_normratio)
+    if opt.log then
+--        Log:add('vlc grad', vlcg:norm())
+--        Log:add('vle grad', vleg:norm())
+--        Log:add('mlc grad', mlcg:norm())
+--        Log:add('mle grad', mleg:norm())
+        Log:add('mean variance', vars:mean())
+        Log:add('min. variance', vars:min())
+        Log:add('max. variance', vars:max())
+        Log:add('mean means', self.means:mean())
+        Log:add('min. means', self.means:min())
+        Log:add('max. means', self.means:max())
+        Log:add('mu normratio', mu_normratio)
+        Log:add('var normratio', var_normratio)
+    end
+
 end
 -- we do not need to accumulate parameters when sharing
 VBLinear.sharedAccUpdateGradParameters = VBLinear.accUpdateGradParameters

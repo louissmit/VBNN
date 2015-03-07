@@ -7,6 +7,7 @@ from watchdog.observers import Observer
 from watchdog.events import LoggingEventHandler
 
 from bokeh.plotting import figure, output_server, cursession, show
+from bokeh.models import Range1d
 
 from watchdog.events import FileSystemEventHandler
 
@@ -21,11 +22,24 @@ class PlotHandler(FileSystemEventHandler):
         print "updating!!"
         update_plots(self.root, self.figures, self.types)
 
-def get_data(root, id):
-    filename = root + "/" + id
+def read_data(filename):
     with open(filename) as f:
         content = [float(x.strip()) for x in f.readlines()]
     return content
+
+def get_data(root, id):
+    filename = root + "/" + id
+    return read_data(filename)
+
+def get_fold_data(root, type, k):
+    filename = root + "/"+type+"-fold=" + str(k)
+    return read_data(filename)
+
+def combine_fold_data(root, type, k):
+    result = np.array(get_fold_data(root, type, 1))
+    for i in range(2, k+1):
+        result += np.array(get_fold_data(root, type, i))
+    return result/k
 
 def setup_plots(root, types):
     colors = ["green", "blue", 'red', 'yellow']
@@ -33,10 +47,12 @@ def setup_plots(root, types):
     for type, ids in types.iteritems():
         p = figure(title=type,
                 plot_width=400,
-                plot_height=400
+                plot_height=400,
+                x_range=[0, 100]
         )
         for i, id in enumerate(ids):
             y = get_data(root, id)
+            # y = combine_fold_data(root, id, 10)
             x = np.arange(len(y))
             p.line(x, y,
                    legend=id,
@@ -44,6 +60,7 @@ def setup_plots(root, types):
                    y_axis_label=id,
                    color=colors[i],
                    name=id)
+            p.x_range.end = len(y)
         figures[type] = p
     show(p)
     return figures
@@ -54,7 +71,12 @@ def update_plots(root, figures, types):
         for id in types[type]:
             renderer = fig.select(dict(name=id))
             ds = renderer[0].data_source
-            ds.data["y"] = get_data(root, id)
+            y = get_data(root, id)
+            if len(y) > fig.x_range.end:
+                print "HEEEE"
+                fig.x_range = Range1d(start=0, end=len(y))
+
+            ds.data["y"] = y
             cursession().store_objects(ds)
 
     cursession().publish()
@@ -66,7 +88,7 @@ def update_plots(root, figures, types):
 #     figs = setup_plots(root, to_plot)
 #     update_plots(root, figs)
 if __name__ == "__main__":
-    root = "vtest"
+    root = "vbinit"
     # to_plot = ['trainerr', 'deverr']
     to_plot = {
         "error" :  ['trainerr', 'deverr'],
@@ -75,7 +97,7 @@ if __name__ == "__main__":
         # "variance" : ['variance']
         "variance" : ['mean variance', 'min. variance', 'max. variance'],
         "means" : ['mean means', 'min. means', 'max. means'],
-        "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
+        # "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
         "normratio" : ['mu normratio', 'var normratio']
     }
     output_server("animated_line")

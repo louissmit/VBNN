@@ -46,7 +46,10 @@ function mlp:buildModel(opt)
 end
 
 function mlp:resetGradients()
-    self.gradParameters:zero()
+    self.model:zeroGradParameters()
+    for _, i in pairs(self.vb_indices) do
+        self.model:get(i):resetAcc(self.opt)
+    end
 end
 
 function mlp:sample()
@@ -62,7 +65,7 @@ function mlp:reset(opt)
         local W = weight:size(1)*weight:size(2)
         local sample = randomkit.normal(
             torch.Tensor(W):zero(),
-            torch.Tensor(W):fill(opt.mu_init)):float():resizeAs(weight:float())
+            torch.Tensor(W):fill(opt.weight_init)):float():resizeAs(weight:float())
         weight:copy(sample)
     end
 end
@@ -112,8 +115,8 @@ function mlp:update(opt)
         function(_) return _, self.gradParameters:mul(1/opt.batchSize) end,
         self.parameters,
         self.state)
---    local normratio = torch.norm(update)/torch.norm(x)
---    print("normratio:", normratio)
+    local normratio = torch.norm(update)/torch.norm(x)
+    print("normratio:", normratio)
     if opt.type == 'vb' then
         for _, i in pairs(self.vb_indices) do
             self.model:get(i):update(opt)
