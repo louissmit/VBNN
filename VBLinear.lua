@@ -9,13 +9,13 @@ local VBLinear, parent = torch.class('nn.VBLinear', 'nn.Linear')
 function VBLinear:__init(inputSize, outputSize, opt)
     parent.__init(self, inputSize, outputSize)
     self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(opt.var_init))
-    self.accGradSquared = torch.Tensor(outputSize, inputSize):float()
+    self.accGradSquared = torch.Tensor(outputSize, inputSize):zero()
     self.W = outputSize*inputSize
-    self.means = randomkit.normal(
-        torch.Tensor(self.W):zero(),
-        torch.Tensor(self.W):fill(opt.mu_init)):float():resizeAs(self.weight)
+--    self.means = randomkit.normal(
+--        torch.Tensor(self.W):zero(),
+--        torch.Tensor(self.W):fill(opt.mu_init)):float():resizeAs(self.weight)
+    self.means = torch.Tensor(outputSize, inputSize):zero()
     print(self.means:std())
---    self.means = torch.Tensor(outputSize, inputSize):zero()
     self.meanState = u.shallow_copy(opt.meanState)
     self.varState = u.shallow_copy(opt.varState)
 end
@@ -96,10 +96,10 @@ function VBLinear:update(opt)
     print("means: ", self.means:min(), self.means:mean(), self.means:max())
     print('mu/var nr: ', mu_normratio, var_normratio)
     if opt.log then
---        Log:add('vlc grad', vlcg:norm())
---        Log:add('vle grad', vleg:norm())
---        Log:add('mlc grad', mlcg:norm())
---        Log:add('mle grad', mleg:norm())
+        Log:add('vlc grad', vlcg:norm())
+        Log:add('vle grad', vleg:norm())
+        Log:add('mlc grad', mlcg:norm())
+        Log:add('mle grad', mleg:norm())
         Log:add('mean variance', vars:mean())
         Log:add('min. variance', vars:min())
         Log:add('max. variance', vars:max())

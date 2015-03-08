@@ -48,7 +48,7 @@ def setup_plots(root, types):
         p = figure(title=type,
                 plot_width=400,
                 plot_height=400,
-                x_range=[0, 100]
+                # x_range=[0, 100]
         )
         for i, id in enumerate(ids):
             y = get_data(root, id)
@@ -60,7 +60,7 @@ def setup_plots(root, types):
                    y_axis_label=id,
                    color=colors[i],
                    name=id)
-            p.x_range.end = len(y)
+            # p.x_range.end = len(y)
         figures[type] = p
     show(p)
     return figures
@@ -72,11 +72,12 @@ def update_plots(root, figures, types):
             renderer = fig.select(dict(name=id))
             ds = renderer[0].data_source
             y = get_data(root, id)
-            if len(y) > fig.x_range.end:
-                print "HEEEE"
-                fig.x_range = Range1d(start=0, end=len(y))
-
+            # if len(y) > fig.x_range.end-5:
+            #     print "heeeeey"
+            #     fig.x_range = Range1d(start=0, end=len(y)+20)
             ds.data["y"] = y
+            ds.data["x"] = np.arange(len(y))
+            ds._dirty = True
             cursession().store_objects(ds)
 
     cursession().publish()
@@ -88,7 +89,7 @@ def update_plots(root, figures, types):
 #     figs = setup_plots(root, to_plot)
 #     update_plots(root, figs)
 if __name__ == "__main__":
-    root = "vbinit"
+    root = "vb6kgrowfast"
     # to_plot = ['trainerr', 'deverr']
     to_plot = {
         "error" :  ['trainerr', 'deverr'],
@@ -100,6 +101,10 @@ if __name__ == "__main__":
         # "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
         "normratio" : ['mu normratio', 'var normratio']
     }
+    # to_plot = {
+    #      "error" :  ['trainerr', 'deverr'],
+    #     "accuracy" :  ['trainacc', 'devacc'],
+    # }
     output_server("animated_line")
 
     figs = setup_plots(root, to_plot)

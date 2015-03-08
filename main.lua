@@ -123,8 +123,8 @@ function main:run()
     print('<torch> set nb of threads to ' .. torch.getnumthreads())
 --    local net = Convnet:buildModel(opt)
     local net = MLP:buildModel(opt)
---    local trainSet, testSet = data.getMnist()
-    local trainSet, testSet = data.getBacteriaFold(2, 10)
+    local trainSet, testSet = data.getMnist()
+--    local trainSet, testSet = data.getBacteriaFold(2, 10)
 
     while true do
         local testAccuracy, testError = self:test(net, testSet, opt)
