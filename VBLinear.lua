@@ -18,12 +18,14 @@ function VBLinear:__init(inputSize, outputSize, opt)
     print(self.means:std())
     self.meanState = u.shallow_copy(opt.meanState)
     self.varState = u.shallow_copy(opt.varState)
+
+    self:compute_prior()
 end
 
 function VBLinear:sample(opt)
     local sample = randomkit.normal(
         self.means:float(),
-        torch.sqrt(torch.exp(self.lvars:float()))
+        self.stdv:float()
     ):float()
     if opt.cuda then
         sample = sample:cuda()
@@ -32,13 +34,14 @@ function VBLinear:sample(opt)
 end
 
 function VBLinear:compute_prior()
+    self.vars = torch.exp(self.lvars)
+    self.stdv = torch.sqrt(self.vars)
     self.mu_hat = (1/self.W)*torch.sum(self.means)
 --    self.mu_hat = 0
-    local vars = torch.exp(self.lvars)
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
 --    self.var_hat = torch.pow(0.075, 2)
-    self.var_hat = (1/self.W)*torch.sum(torch.add(vars, self.mu_sqe))
+    self.var_hat = (1/self.W)*torch.sum(torch.add(self.vars, self.mu_sqe))
     return self.mu_hat, self.var_hat
 end
 
@@ -48,14 +51,12 @@ function VBLinear:compute_mugrads(opt)
 end
 
 function VBLinear:compute_vargrads(opt)
-    local vars = torch.exp(self.lvars)
-    local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):div(2*opt.B)
-    return self.accGradSquared:div(2*opt.S):cmul(vars), lcg:cmul(vars)
+    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):div(2*opt.B)
+    return self.accGradSquared:div(2*opt.S):cmul(self.vars), lcg:cmul(self.vars)
 end
 function VBLinear:calc_lc(opt)
-    local vars = torch.exp(self.lvars)
-    local LCfirst = torch.add(-torch.log(torch.sqrt(vars)), torch.log(torch.sqrt(self.var_hat)))
-    local LCsecond = torch.add(self.mu_sqe, torch.add(vars, -self.var_hat)):div(2*self.var_hat)
+    local LCfirst = torch.add(-torch.log(torch.sqrt(self.vars)), torch.log(torch.sqrt(self.var_hat)))
+    local LCsecond = torch.add(self.mu_sqe, torch.add(self.vars, -self.var_hat)):div(2*self.var_hat)
     return torch.add(LCfirst, LCsecond):mul(1/opt.B)
 end
 
