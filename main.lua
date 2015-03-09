@@ -127,10 +127,10 @@ function main:run()
 --    local trainSet, testSet = data.getBacteriaFold(2, 10)
 
     while true do
-        local testAccuracy, testError = self:test(net, testSet, opt)
-        print(testAccuracy, testError)
         local trainAccuracy, trainError = self:train(net, trainSet, opt)
         print(trainAccuracy, trainError)
+        local testAccuracy, testError = self:test(net, testSet, opt)
+        print(testAccuracy, testError)
         if opt.log then
             Log:add('devacc', testAccuracy)
             Log:add('trainacc', trainAccuracy)
