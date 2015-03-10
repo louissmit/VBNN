@@ -89,7 +89,7 @@ def update_plots(root, figures, types):
 #     figs = setup_plots(root, to_plot)
 #     update_plots(root, figs)
 if __name__ == "__main__":
-    root = "vb6kdurk"
+    root = "vb6kdurk3"
     # to_plot = ['trainerr', 'deverr']
     to_plot = {
         "error" :  ['trainerr', 'deverr'],

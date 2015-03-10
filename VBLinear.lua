@@ -12,10 +12,13 @@ function VBLinear:__init(inputSize, outputSize, opt)
 --    self.accGradSquared = torch.Tensor(outputSize, inputSize):zero()
     self.gradSum = torch.Tensor(outputSize, inputSize):zero()
     self.W = outputSize*inputSize
---    self.means = randomkit.normal(
---        torch.Tensor(self.W):zero(),
---        torch.Tensor(self.W):fill(opt.mu_init)):float():resizeAs(self.weight)
-    self.means = torch.Tensor(outputSize, inputSize):zero()
+    if opt.mu_init == 0 then
+        self.means = torch.Tensor(outputSize, inputSize):zero()
+    else
+    self.means = randomkit.normal(
+        torch.Tensor(self.W):zero(),
+        torch.Tensor(self.W):fill(opt.mu_init)):float():resizeAs(self.weight)
+    end
     self.meanState = u.shallow_copy(opt.meanState)
     self.varState = u.shallow_copy(opt.varState)
 
@@ -97,9 +100,9 @@ end
 function VBLinear:update(opt)
     self:compute_prior()
     local mleg, mlcg = self:compute_mugrads(opt)
-    local mugrad = torch.add(mleg, mlcg)
+    local mugrad = mleg--torch.add(mleg, mlcg)
     local vleg, vlcg = self:compute_vargrads(opt)
-    local vgrad = torch.add(vleg, vlcg)
+    local vgrad = vleg--torch.add(vleg, vlcg)
 --    vgrad = vleg
     local x, _, update = optim.adam(
         function(_) return LD, mugrad:mul(1/opt.batchSize) end,

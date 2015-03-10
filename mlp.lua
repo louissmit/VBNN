@@ -37,8 +37,11 @@ function mlp:buildModel(opt)
     local parameters, gradParameters = self.model:getParameters()
     self.parameters = parameters
     self.gradParameters = gradParameters
+    self.W = parameters:size(1)
     print(self.model)
-    print("nr. of parameters: ", parameters:size(1))
+    print("nr. of parameters: ", self.W)
+    self.p = self.parameters:narrow(1, self.W-1010, 1010)
+    self.g = self.gradParameters:narrow(1, self.W-1010, 1010)
 
     self.state = u.shallow_copy(opt.state)
     self:reset(opt)
