@@ -15,7 +15,7 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "vbdeepbaseline"
+opt.network_name = "vbdeepreparam"
 opt.type = "vb"
 opt.cuda = true
 opt.trainSize = 100
@@ -43,7 +43,7 @@ opt.pi_init = {
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.01,
+    learningRate = 0.05,
 --    learningRateDecay = 0.01
 }
 --opt.lcvarState = {
