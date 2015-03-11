@@ -1,4 +1,4 @@
-require 'nn'
+--require 'nn'
 require 'optim'
 require 'gfx.js'
 local inspect = require 'inspect'
@@ -7,41 +7,43 @@ local viz = require('visualize')
 NNparams = require('NNparams')
 VBparams = require('VBparams')
 VBSSparams = require('VBSSparams')
-require 'torch'
---require 'cunn'
+--require 'torch'
+require 'cunn'
 --torch.setdefaulttensortype('torch.CudaTensor')
 --print( inspect(cutorch.getDeviceProperties(cutorch.getDevice()) ))
 local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "derp"
+opt.network_name = "vbdeepbaseline"
 opt.type = "vb"
---opt.cuda = true
+opt.cuda = true
 opt.trainSize = 100
 opt.testSize = 1000
 
 opt.plot = true
 opt.batchSize = 1
 opt.B = (opt.trainSize/opt.batchSize)--*100
-opt.hidden = {100}
-opt.S = 10
+opt.hidden = {100, 100, 100, 100, 100}
+opt.S = 5
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
 --opt.plotlc = true
 --opt.viz = true
 -- fix seed
-torch.manualSeed(3)
+--torch.manualSeed(3)
 
 opt.mu_init = 0.1
-opt.var_init = torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
+opt.var_init = torch.pow(0.075,2)--torch.pow(torch.sqrt(2/784),2)--0.01
+opt.var_init2 = torch.pow(torch.sqrt(2/opt.hidden[1]),2)--0.01
+print(opt.var_init, opt.var_init2)
 opt.pi_init = {
     mu = 5,
     var = 0.00001
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.00001,
+    learningRate = 0.01,
 --    learningRateDecay = 0.01
 }
 --opt.lcvarState = {
@@ -49,7 +51,7 @@ opt.levarState = {
 --    learningRateDecay = 0.001
 --}
 opt.lemeanState = {
-    learningRate = 0.00000001,
+    learningRate = 0.001,
 --    learningRateDecay = 0.01
 }
 --opt.lcmeanState = {
@@ -63,7 +65,7 @@ opt.lcpiState = {
     learningRate = 0.000001,
 }
 opt.smState = {
-    learningRate = 0.00000002,
+    learningRate = 0.0001,
 }
 
 -- threads
@@ -110,6 +112,7 @@ end
 
 -- retrieve parameters and gradients
 parameters, gradParameters = model:getParameters()
+opt.W = parameters:size(1)
 
 print("nr. of parameters: ", parameters:size(1))
 

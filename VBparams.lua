@@ -14,17 +14,21 @@ local VBparams = {}
 function VBparams:init(W, opt)
     self.W = W
     self.lvars = torch.Tensor(W):fill(torch.log(opt.var_init))
-    self.means = randomkit.normal(
-        torch.Tensor(W):zero(),
-        torch.Tensor(W):fill(opt.mu_init)):float()
-    self.smp = parameters:narrow(1, self.W, parameters:size(1)-self.W) -- softmax layer params
+--    self.lvars:narrow(1, self.W-1010, 1010):fill(opt.var_init2)
+    if opt.mu_init == 0 then
+        self.means = torch.Tensor(W):zero()
+    else
+        self.means = randomkit.normal(
+            torch.Tensor(W):zero(),
+            torch.Tensor(W):fill(opt.mu_init)):float()
+    end
+
 
     -- optimisation state
     self.levarState = opt.levarState
     self.lcvarState = opt.lcvarState
     self.lemeanState = opt.lemeanState
     self.lcmeanState = opt.lcmeanState
-    self.smState = opt.smState
     self.w = torch.Tensor(W)
     return self
 end
@@ -103,22 +107,18 @@ function VBparams:calc_LC(opt)
 end
 
 function VBparams:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
-    local smsize = parameters:size(1)-self.W
     local LN_squared = torch.Tensor(self.W):zero()
     local gradsum = torch.Tensor(self.W):zero()
-    local sm_gradsum = torch.Tensor(smsize):zero()
     local outputs
     local LE = 0
     local accuracy = 0.0
     for i = 1, opt.S do
-        local p = parameters:narrow(1,1, self.W)
-        local g = gradParameters:narrow(1,1, self.W)
         local w = self:sampleW()
         if opt.cuda then
             w = w:cuda()
         end
 
-        p:copy(w)
+        parameters:copy(w)
         outputs = model:forward(inputs)
         LE = LE + criterion:forward(outputs, targets)
         accuracy = accuracy + u.get_accuracy(outputs, targets)
@@ -126,14 +126,11 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
         local df_do = criterion:backward(outputs, targets)
         model:backward(inputs, df_do)
 
-        LN_squared:add(torch.pow(g:float(), 2))
-        gradsum:add(g:float())
-        local smg = gradParameters:narrow(1, self.W, smsize)
-        sm_gradsum:add(smg)
+        LN_squared:add(torch.pow(gradParameters:float(), 2))
+        gradsum:add(gradParameters:float())
         gradParameters:zero()
     end
     LE = LE/opt.S
-    local sm_grad= sm_gradsum:mul(1/opt.S)
 
     accuracy = accuracy/opt.S
 
@@ -148,10 +145,12 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     print("LE: ", LE)
     print("vleg: ", vleg:norm())
     print("vlcg: ", vlcg:norm())
+    print("mleg: ", mleg:norm())
+    print("mlcg: ", mlcg:norm())
 
     local LD = LE + torch.sum(LC)
-    mleg = torch.add(mleg, mlcg)
-    vleg = torch.add(vleg, vlcg)
+--    mleg = torch.add(mleg, mlcg)
+--    vleg = torch.add(vleg, vlcg)
 
     local x, _, update = optim.adam(function(_) return LD, mleg:mul(1/opt.batchSize) end, self.means, self.lemeanState)
     local mule_normratio = torch.norm(update)/torch.norm(x)
@@ -168,9 +167,6 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
 --    print("varlcnr: ",varlc_normratio)
     print("mulenr: ",mule_normratio)
 --    print("mulcnr: ",mulc_normratio)
-    local x, _, update = optim.adam(
-        function(_) return _, sm_grad:mul(1/opt.batchSize) end,
-            self.smp, self.smState)
     if opt.normcheck then
 --        print("MU: ", mu_normratio)
 --        print("VAR: ", var_normratio)
