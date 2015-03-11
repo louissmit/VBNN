@@ -43,7 +43,7 @@ opt.pi_init = {
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.01,
+    learningRate = 0.1,
 --    learningRateDecay = 0.01
 }
 --opt.lcvarState = {

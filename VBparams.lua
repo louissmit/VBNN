@@ -70,13 +70,14 @@ function VBparams:sampleW()
 end
 
 function VBparams:compute_prior()
+    self.vars = torch.exp(self.lvars)
+    self.stdv = torch.sqrt(self.vars)
     self.mu_hat = (1/self.W)*torch.sum(self.means)
 --    self.mu_hat = 0
-    local vars = torch.exp(self.lvars)
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
 --    self.var_hat = torch.pow(0.075, 2)
-    self.var_hat = (1/self.W)*torch.sum(torch.add(vars, self.mu_sqe))
+    self.var_hat = (1/self.W)*torch.sum(torch.add(self.vars, self.mu_sqe))
     return self.mu_hat, self.var_hat
 end
 
@@ -85,10 +86,9 @@ function VBparams:compute_mugrads(gradsum, opt)
     return gradsum:div(opt.S), lcg
 end
 
-function VBparams:compute_vargrads(LN_squared, opt)
-    local vars = torch.exp(self.lvars)
-    local lcg = torch.add(-torch.pow(vars, -1), 1/self.var_hat):div(2*opt.B)
-    return LN_squared:div(2*opt.S):cmul(vars), lcg:cmul(vars)
+function VBparams:compute_vargrads(gradsum, opt)
+    local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):div(2*opt.B)
+    return gradsum:div(2*opt.S):cmul(self.vars), lcg:cmul(self.vars)
 end
 
 function VBparams:calc_LC(opt)
@@ -107,11 +107,12 @@ function VBparams:calc_LC(opt)
 end
 
 function VBparams:train(inputs, targets, model, criterion, parameters, gradParameters, opt)
-    local LN_squared = torch.Tensor(self.W):zero()
+    local var_gradsum = torch.Tensor(self.W):zero()
     local gradsum = torch.Tensor(self.W):zero()
     local outputs
     local LE = 0
     local accuracy = 0.0
+    local mu_hat, var_hat = self:compute_prior()
     for i = 1, opt.S do
         local w = self:sampleW()
         if opt.cuda then
@@ -126,7 +127,7 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
         local df_do = criterion:backward(outputs, targets)
         model:backward(inputs, df_do)
 
-        LN_squared:add(torch.pow(gradParameters:float(), 2))
+        var_gradsum:add(torch.pow(gradParameters:float(), 2))
         gradsum:add(gradParameters:float())
         gradParameters:zero()
     end
@@ -135,10 +136,9 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     accuracy = accuracy/opt.S
 
     -- update optimal prior alpha
-    local mu_hat, var_hat = self:compute_prior()
     local mleg, mlcg = self:compute_mugrads(gradsum, opt)
 
-    local vleg, vlcg = self:compute_vargrads(LN_squared, opt)
+    local vleg, vlcg = self:compute_vargrads(var_gradsum, opt)
 
     local LC = self:calc_LC(opt)
     print("LC: ", LC:sum())
@@ -178,9 +178,9 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     end
     print("beta.means:min(): ", torch.min(beta.means))
     print("beta.means:max(): ", torch.max(beta.means))
-    print("beta.vars:min(): ", torch.min(torch.exp(beta.lvars)))
-    print("beta.vars:avg(): ", torch.mean(torch.exp(beta.lvars)))
-    print("beta.vars:max(): ", torch.max(torch.exp(beta.lvars)))
+    print("beta.vars:min(): ", self.vars:min())
+    print("beta.vars:dist(): ", self.vars:mean(), self.vars:std())
+    print("beta.vars:max(): ", self.vars:max())
 
     return torch.sum(LC), LE, accuracy
 end
