@@ -14,8 +14,17 @@ local NNparams = {}
 function NNparams:init(parameters, opt)
     local size = parameters:size(1)
     local newp = torch.Tensor(opt.W)
-    randomkit.normal(newp, 0, torch.sqrt(opt.var_init))
+    randomkit.normal(newp, 0, opt.weight_init)
     parameters:narrow(1, 1, opt.W):copy(newp)
+--    for i = 1, 6 do
+--        local weight = model:get(i*2).weight
+--        local bias = model:get(i*2).bias
+--        bias:zero()
+--        newp = torch.Tensor(weight:size()):zero()
+--        local weight_init = torch.sqrt(2/weight:size(2))
+--        randomkit.normal(newp, 0, weight_init)
+--        weight:copy(newp)
+--    end
     self.optimState = opt.smState
     self.update_counter = 0
     self.parameters = parameters
@@ -49,13 +58,14 @@ function NNparams:train(inputs, targets, model, criterion, parameters, gradParam
     local accuracy = u.get_accuracy(outputs, targets)
     local x, _, update = optim.adam(function(_) return error, gradParameters:mul(1/opt.batchSize) end, parameters, self.optimState)
     local normratio = torch.norm(update)/torch.norm(x)
-    print(normratio)
+    print("normratio: ", normratio)
 
     if opt.normcheck and (self.update_counter % 10)== 0 then
         nrlogger:add{['w'] = normratio}
         nrlogger:style({['w'] = '-'})
         nrlogger:plot()
     end
+    print("params:", parameters:min(), parameters:max(), parameters:std())
 
 
     self.update_counter = self.update_counter + 1

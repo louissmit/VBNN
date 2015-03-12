@@ -31,9 +31,9 @@ function VBparams:init(W, opt)
 
     -- optimisation state
     self.levarState = opt.levarState
-    self.lcvarState = opt.lcvarState
+--    self.lcvarState = opt.lcvarState
     self.lemeanState = opt.lemeanState
-    self.lcmeanState = opt.lcmeanState
+--    self.lcmeanState = opt.lcmeanState
     self.w = torch.Tensor(W)
     return self
 end
@@ -159,8 +159,8 @@ function VBparams:train(inputs, targets, model, criterion, parameters, gradParam
     print("mlcg: ", mlcg:norm())
 
     local LD = LE + torch.sum(LC)
---    mleg = torch.add(mleg, mlcg)
---    vleg = torch.add(vleg, vlcg)
+    mleg = torch.add(mleg, mlcg)
+    vleg = torch.add(vleg, vlcg)
 
     local x, _, update = optim.adam(function(_) return LD, mleg:mul(1/opt.batchSize) end, self.means, self.lemeanState)
     local mule_normratio = torch.norm(update)/torch.norm(x)

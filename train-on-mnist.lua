@@ -15,7 +15,7 @@ local mnist = require('mnist')
 opt = {}
 opt.threads = 1
 opt.network_to_load = ""
-opt.network_name = "vbdeepreparam"
+opt.network_name = "vblulz2"
 opt.type = "vb"
 opt.cuda = true
 opt.trainSize = 100
@@ -23,9 +23,9 @@ opt.testSize = 1000
 
 opt.plot = true
 opt.batchSize = 1
-opt.B = (opt.trainSize/opt.batchSize)--*100
-opt.hidden = {100, 100, 100, 100, 100}
-opt.S = 5
+opt.B = 700000-- (opt.trainSize/opt.batchSize)--*100
+opt.hidden = {100}
+opt.S = 2
 opt.alpha = 0.8 -- NVIL
 --opt.normcheck = true
 --opt.plotlc = true
@@ -33,8 +33,9 @@ opt.alpha = 0.8 -- NVIL
 -- fix seed
 --torch.manualSeed(3)
 
-opt.mu_init = 0.1
-opt.var_init = torch.pow(0.075,2)--torch.pow(torch.sqrt(2/784),2)--0.01
+opt.mu_init = 0.075
+opt.weight_init = 0.075--torch.sqrt(2/100)
+opt.var_init =torch.pow(0.0075,2)--torch.pow(torch.sqrt(2/784),2)--0.01
 opt.var_init2 = torch.pow(torch.sqrt(2/opt.hidden[1]),2)--0.01
 print(opt.var_init, opt.var_init2)
 opt.pi_init = {
@@ -43,7 +44,7 @@ opt.pi_init = {
 }
 -- optimisation params
 opt.levarState = {
-    learningRate = 0.05,
+    learningRate = 0.01,
 --    learningRateDecay = 0.01
 }
 --opt.lcvarState = {
@@ -51,7 +52,7 @@ opt.levarState = {
 --    learningRateDecay = 0.001
 --}
 opt.lemeanState = {
-    learningRate = 0.001,
+    learningRate = 0.0001,
 --    learningRateDecay = 0.01
 }
 --opt.lcmeanState = {
