@@ -24,7 +24,10 @@ class PlotHandler(FileSystemEventHandler):
 
 def read_data(filename):
     with open(filename) as f:
-        content = [float(x.strip()) for x in f.readlines()]
+        try:
+            content = [float(x.strip()) for x in f.readlines()]
+        except ValueError:
+            return []
     return content
 
 def get_data(root, id):
@@ -89,7 +92,7 @@ def update_plots(root, figures, types):
 #     figs = setup_plots(root, to_plot)
 #     update_plots(root, figs)
 if __name__ == "__main__":
-    root = "vb6kdurk3"
+    root = "exp"
     # to_plot = ['trainerr', 'deverr']
     to_plot = {
         "error" :  ['trainerr', 'deverr'],

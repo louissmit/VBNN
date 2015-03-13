@@ -5,6 +5,7 @@ local u = require('utils')
 local data = require('data')
 local Convnet = require('convnet')
 local MLP = require('mlp')
+local VBMLP = require('vb_mlp')
 local main = {}
 include('VBLinear.lua')
 torch.setdefaulttensortype('torch.FloatTensor')
@@ -26,27 +27,11 @@ function main:train(net, dataset, opt)
         collectgarbage()
         -- reset gradients
         net:resetGradients()
-        if opt.type == 'vb' then
-            local sample_err = 0
-            local sample_acc = 0
-            for i = 1, opt.S do
-                net:sample()
-                local err, acc = net:run(inputs, targets)
-                sample_err = sample_err + err
-                sample_acc = sample_acc + acc
-            end
-            accuracy = accuracy + sample_acc/opt.S
-            error = error + sample_err/opt.S
-            net:update(opt)
---            opt.S = torch.ceil(torch.pow(opt.S, 0.95))
-        else
-            local err, acc = net:run(inputs, targets)
-            accuracy = accuracy + acc
-            error = error + err
-            net:update(opt)
-        end
+        local err, acc = net:train(inputs, targets)
+        accuracy = accuracy + acc
+        error = error + err
 
-        xlua.progress(t, opt.trainSize)
+        xlua.progress(t*opt.batchSize, opt.trainSize)
         t = t + 1
     end)
     return accuracy/B, error/B
@@ -118,11 +103,15 @@ function main:run()
     local opt = require('config')
     -- global logger
     Log = require('logger'):init(opt.network_name)
-    torch.manualSeed(3)
     torch.setnumthreads(opt.threads)
     print('<torch> set nb of threads to ' .. torch.getnumthreads())
---    local net = Convnet:buildModel(opt)
-    local net = MLP:buildModel(opt)
+    local net
+    if opt.type == 'vb' then
+        net = VBMLP:buildModel(opt)
+    else
+        --    local net = Convnet:buildModel(opt)
+        net = MLP:buildModel(opt)
+    end
     local trainSet, testSet = data.getMnist()
 --    local trainSet, testSet = data.getBacteriaFold(2, 10)
 
@@ -137,13 +126,13 @@ function main:run()
             Log:add('deverr', testError)
             Log:add('trainerr', trainError)
             if opt.type == 'vb' then
-                local lc = net:calc_lc(opt)
+                local lc = net:calc_LC(opt)
                 Log:add('lc', lc)
                 print('LC: ', lc)
             end
             Log:flush()
         end
-        u.safe_save(net, opt.network_name, 'model')
+--        u.safe_save(net, opt.network_name, 'model')
 --          net:save()
     end
 
