@@ -31,9 +31,23 @@ function mlp:buildModel(opt)
     print(self.model)
     print("nr. of parameters: ", self.W)
 
-    local newp = torch.Tensor(self.W)
-    randomkit.normal(newp, 0, opt.weight_init)
-    parameters:copy(newp)
+
+    if false then--opt.msr_init then
+            for i = 1, 6 do
+                local weight = self.model:get(i*2).weight
+                local bias = self.model:get(i*2).bias
+                bias:zero()
+                newp = torch.Tensor(weight:size()):zero()
+                local weight_init = torch.sqrt(2/weight:size(2))
+                randomkit.normal(newp, 0, weight_init)
+                weight:copy(newp)
+            end
+    else
+        local newp = torch.Tensor(self.W)
+        randomkit.normal(newp, 0, opt.weight_init)
+        parameters:copy(newp)
+    end
+
 
     self.state = u.shallow_copy(opt.state)
     self:reset(opt)
@@ -81,6 +95,14 @@ function mlp:update()
         self.state)
     local normratio = torch.norm(update)/torch.norm(x)
     print("normratio:", normratio)
+    if self.opt.log then
+        Log:add('mean means', self.parameters:mean())
+        Log:add('std means', self.parameters:std())
+        Log:add('min. means', self.parameters:min())
+        Log:add('max. means', self.parameters:max())
+        Log:add('mu normratio', normratio)
+    end
+
 end
 
 return mlp

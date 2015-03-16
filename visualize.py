@@ -45,7 +45,7 @@ def combine_fold_data(root, type, k):
     return result/k
 
 def setup_plots(root, types):
-    colors = ["green", "blue", 'red', 'yellow']
+    colors = ["green", "blue", 'red', 'black']
     figures = {}
     for type, ids in types.iteritems():
         p = figure(title=type,
@@ -97,18 +97,17 @@ if __name__ == "__main__":
     to_plot = {
         "error" :  ['trainerr', 'deverr'],
         "accuracy" :  ['trainacc', 'devacc'],
-        "lc" : ['lc'],
-        # "variance" : ['variance']
-        "variance" : ['mean variance', 'min. variance', 'max. variance'],
-        "means" : ['mean means', 'min. means', 'max. means'],
-        # "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
+        "lc" : ['lc', 'lcfirst', 'lcsecond'],
+        "variance" : ['var hat', 'mean variance', 'min. variance', 'max. variance'],
+        "means" : ['mean means', 'std means', 'min. means', 'max. means'],
+        "grads" : ['mle grad', 'mlc grad', 'vle grad', 'vlc grad'],
         "normratio" : ['mu normratio', 'var normratio']
     }
     # to_plot = {
     #      "error" :  ['trainerr', 'deverr'],
     #     "accuracy" :  ['trainacc', 'devacc'],
     # }
-    output_server("animated_line")
+    output_server(root)
 
     figs = setup_plots(root, to_plot)
     while True:
