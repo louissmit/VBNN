@@ -93,7 +93,8 @@ function vbmlp:update()
     local mres, vres
     if self.opt.lc then
         mres = torch.add(mleg, mlcg)
-        vres = torch.add(vleg, vlcg)
+--        vres = torch.add(vleg, vlcg)
+        vres = vleg
     else
         mres = mleg
         vres = vleg

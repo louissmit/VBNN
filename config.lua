@@ -29,7 +29,7 @@ opt.plot = true
 
 opt.B = (opt.trainSize/opt.batchSize)--*100
 opt.hidden = {100, 100, 100, 100, 100}
-opt.S = 5
+opt.S = 1
 opt.testSamples = 5
 --opt.quicktest = true
 opt.log = true
