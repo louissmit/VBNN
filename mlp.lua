@@ -40,11 +40,19 @@ function mlp:buildModel(opt)
     self.W = parameters:size(1)
     print(self.model)
     print("nr. of parameters: ", self.W)
-    self.p = self.parameters:narrow(1, self.W-1010, 1010)
-    self.g = self.gradParameters:narrow(1, self.W-1010, 1010)
+    local newp
+    for i = 1, 6 do
+        local weight = self.model:get(i*2).weight
+        local bias = self.model:get(i*2).bias
+        bias:zero()
+        newp = torch.Tensor(weight:size()):zero()
+        local weight_init = torch.sqrt(2/weight:size(2))
+        randomkit.normal(newp, 0, weight_init)
+        weight:copy(newp)
+    end
 
     self.state = u.shallow_copy(opt.state)
-    self:reset(opt)
+--    self:reset(opt)
     return self
 end
 
