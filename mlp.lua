@@ -38,10 +38,13 @@ function mlp:buildModel(opt)
     self.parameters = parameters
     self.gradParameters = gradParameters
     self.W = parameters:size(1)
+    self.p = parameters:narrow(1, self.W-1010, 1010)
+    self.g = gradParameters:narrow(1, self.W-1010, 1010)
     print(self.model)
     print("nr. of parameters: ", self.W)
     local newp
-    for i = 1, 6 do
+
+    for i = 1, #self.opt.hidden+1 do
         local weight = self.model:get(i*2).weight
         local bias = self.model:get(i*2).bias
         bias:zero()
@@ -57,7 +60,7 @@ function mlp:buildModel(opt)
 end
 
 function mlp:resetGradients()
-    self.model:zeroGradParameters()
+    self.gradParameters:zero()
     for _, i in pairs(self.vb_indices) do
         self.model:get(i):resetAcc(self.opt)
     end
@@ -68,17 +71,6 @@ function mlp:sample()
         self.model:get(i):sample(self.opt)
     end
 
-end
-
-function mlp:reset(opt)
-    for _, i in pairs(self.vb_indices) do
-        local weight = self.model:get(i).weight
-        local W = weight:size(1)*weight:size(2)
-        local sample = randomkit.normal(
-            torch.Tensor(W):zero(),
-            torch.Tensor(W):fill(opt.weight_init)):float():resizeAs(weight:float())
-        weight:copy(sample)
-    end
 end
 
 function mlp:run(inputs, targets)

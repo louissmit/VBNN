@@ -24,7 +24,10 @@ class PlotHandler(FileSystemEventHandler):
 
 def read_data(filename):
     with open(filename) as f:
-        content = [float(x.strip()) for x in f.readlines()]
+        try:
+            content = [float(x.strip()) for x in f.readlines()]
+        except ValueError:
+            return []
     return content
 
 def get_data(root, id):
@@ -42,7 +45,7 @@ def combine_fold_data(root, type, k):
     return result/k
 
 def setup_plots(root, types):
-    colors = ["green", "blue", 'red', 'yellow']
+    colors = ["green", "blue", 'red', 'black']
     figures = {}
     for type, ids in types.iteritems():
         p = figure(title=type,
@@ -89,16 +92,16 @@ def update_plots(root, figures, types):
 #     figs = setup_plots(root, to_plot)
 #     update_plots(root, figs)
 if __name__ == "__main__":
-    root = "vb6kdurk3"
+    root = "exp"
     # to_plot = ['trainerr', 'deverr']
     to_plot = {
         "error" :  ['trainerr', 'deverr'],
         "accuracy" :  ['trainacc', 'devacc'],
         "lc" : ['lc'],
         # "variance" : ['variance']
-        "variance" : ['mean variance', 'min. variance', 'max. variance'],
+        "variance" : ['mean variance', 'var hat'],
         "means" : ['mean means', 'min. means', 'max. means'],
-        # "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
+        "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
         "normratio" : ['mu normratio', 'var normratio']
     }
     # to_plot = {

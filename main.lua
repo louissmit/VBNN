@@ -118,7 +118,6 @@ function main:run()
     local opt = require('config')
     -- global logger
     Log = require('logger'):init(opt.network_name)
-    torch.manualSeed(3)
     torch.setnumthreads(opt.threads)
     print('<torch> set nb of threads to ' .. torch.getnumthreads())
 --    local net = Convnet:buildModel(opt)

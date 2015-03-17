@@ -8,25 +8,39 @@ local VBLinear, parent = torch.class('nn.VBLinear', 'nn.Linear')
 
 function VBLinear:__init(inputSize, outputSize, opt)
     parent.__init(self, inputSize, outputSize)
-    local var_init = 2/self.weight:size(2)
-    print(var_init)
-    self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(var_init))
---    self.accGradSquared = torch.Tensor(outputSize, inputSize):zero()
+    self.opt = opt
+    self.var_init = self.opt.var_init
+    self.bias:zero()
+    if opt.msr_init then
+        self.var_init = 2/self.weight:size(2)
+    end
+    self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(self.var_init))
+    --    self.accGradSquared = torch.Tensor(outputSize, inputSize):zero()
     self.gradSum = torch.Tensor(outputSize, inputSize):zero()
     self.W = outputSize*inputSize
     if opt.mu_init == 0 then
         self.means = torch.Tensor(outputSize, inputSize):zero()
     else
-    self.means = randomkit.normal(
-        torch.Tensor(self.W):zero(),
-        torch.Tensor(self.W):fill(opt.mu_init)):float():resizeAs(self.weight)
+        local std_init = torch.sqrt(self.var_init)
+        self.means = randomkit.normal(
+            torch.Tensor(self.W):zero(),
+            torch.Tensor(self.W):fill(std_init)):float():resizeAs(self.weight)
     end
+
+    self.biasState = u.shallow_copy(opt.state)
     self.meanState = u.shallow_copy(opt.meanState)
     self.varState = u.shallow_copy(opt.varState)
 
-    self.zeros = torch.Tensor(self.W):zero()
-    self.ones = torch.Tensor(self.W):fill(1.0)
-    self.e = torch.Tensor(self.W)
+    self.zeros = torch.Tensor(outputSize, inputSize):zero()
+    self.ones = torch.Tensor(outputSize, inputSize):fill(1)
+    self.e = torch.Tensor(outputSize, inputSize):zero()
+    self.w = torch.Tensor(outputSize, inputSize):zero()
+
+    if opt.cuda then
+        self.gradSum = self.gradSum:cuda()
+        self.means = self.means:cuda()
+        self.lvars = self.lvars:cuda()
+    end
 
     self:compute_prior()
 end
@@ -37,10 +51,15 @@ function VBLinear:sample(opt)
     self.zeros = self.zeros:float()
     self.ones = self.ones:float()
     end
-    randomkit.normal(self.e, self.zeros, self.ones)
-    local sample
-    sample = torch.add(self.means, torch.cmul(self.stdv, self.e:cuda()))
-    self.weight:copy(sample:resizeAs(self.weight))
+    randomkit.normal(self.e:float(), self.zeros, self.ones)
+    if self.opt.cuda then
+        self.e = self.e:cuda()
+    end
+    local w = torch.add(self.means, torch.cmul(self.stdv, self.e))
+    if self.opt.cuda then
+        w = w:cuda()
+    end
+    self.weight:copy(w)
 end
 
 --function VBLinear:type(type)
@@ -57,8 +76,8 @@ end
 function VBLinear:compute_prior()
     self.vars = torch.exp(self.lvars)
     self.stdv = torch.sqrt(self.vars)
---    self.mu_hat = (1/self.W)*torch.sum(self.means)
-    self.mu_hat = 0
+    self.mu_hat = (1/self.W)*torch.sum(self.means)
+--    self.mu_hat = 0
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
 --    self.var_hat = torch.pow(0.075, 2)
@@ -91,7 +110,7 @@ end
 function VBLinear:accGradParameters(input, gradOutput, scale)
     parent.accGradParameters(self, input, gradOutput, scale)
     local grad = torch.mm(gradOutput:t(), input)
-    self.gradSum:add(grad:cmul(torch.cmul(self.e:cuda(), self.stdv)))
+    self.gradSum:add(torch.cmul(grad, torch.cmul(self.e, self.stdv)))
 --    self.accGradSquared:add(torch.pow(torch.mm(gradOutput:t(), input), 2))
 end
 
@@ -100,12 +119,16 @@ function VBLinear:resetAcc()
 end
 
 function VBLinear:update(opt)
+    local x, _, update = optim.adam(
+        function(_) return LD, self.gradBias:mul(1/opt.batchSize) end,
+        self.bias,
+        self.biasState)
+--    local bias_normratio = torch.norm(update)/torch.norm(x)
     self:compute_prior()
     local mleg, mlcg = self:compute_mugrads(opt)
     local mugrad = torch.add(mleg, mlcg)
     local vleg, vlcg = self:compute_vargrads(opt)
-    local vgrad = vleg--torch.add(vleg, vlcg)
---    vgrad = vleg
+    local vgrad = torch.add(vleg, vlcg)
     local x, _, update = optim.adam(
         function(_) return LD, mugrad:mul(1/opt.batchSize) end,
         self.means,
@@ -117,17 +140,15 @@ function VBLinear:update(opt)
         self.varState)
     local var_normratio = torch.norm(update)/torch.norm(x)
     local vars = torch.exp(self.lvars)
-    print("var: ", vars:min(), vars:mean(), vars:max())
-    print("means: ", self.means:min(), self.means:mean(), self.means:max())
-    print('mu/var nr: ', mu_normratio, var_normratio)
+--    print("var: ", vars:min(), vars:mean(), vars:max())
+--    print("means: ", self.means:min(), self.means:mean(), self.means:max())
+--    print('mu/var nr: ', mu_normratio, var_normratio)
     if opt.log then
-        Log:add('vlc grad', vlcg:norm())
-        Log:add('vle grad', vleg:norm())
-        Log:add('mlc grad', mlcg:norm())
-        Log:add('mle grad', mleg:norm())
+        Log:add('vlc grad', vlcg:norm()/self.lvars:norm())
+        Log:add('vle grad', vleg:norm()/self.lvars:norm())
+        Log:add('mlc grad', mlcg:norm()/self.means:norm())
+        Log:add('mle grad', mleg:norm()/self.means:norm())
         Log:add('mean variance', vars:mean())
-        Log:add('min. variance', vars:min())
-        Log:add('max. variance', vars:max())
         Log:add('var hat', self.var_hat)
         Log:add('mean means', self.means:mean())
         Log:add('min. means', self.means:min())
@@ -138,5 +159,5 @@ function VBLinear:update(opt)
 
 end
 -- we do not need to accumulate parameters when sharing
-VBLinear.sharedAccUpdateGradParameters = VBLinear.accUpdateGradParameters
+--VBLinear.sharedAccUpdateGradParameters = VBLinear.accUpdateGradParameters
 
