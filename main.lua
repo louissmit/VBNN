@@ -46,7 +46,7 @@ function main:train(net, dataset, opt)
             net:update(opt)
         end
 
-        xlua.progress(t, opt.trainSize)
+        xlua.progress(t*opt.batchSize, opt.trainSize)
         t = t + 1
     end)
     return accuracy/B, error/B
@@ -114,6 +114,23 @@ function main:crossvalidate()
     return totalacc/k, totalerr/k
 end
 
+function main:checkgrads(net)
+    local to_check = net.lvars
+    local epsilon = 2*torch.sqrt(1e-12)*(1+torch.norm(to_check))
+    print('epsilon', epsilon)
+    local diff, dc, dc_est = optim.checkgrad(function()
+        net:compute_prior()
+        local lce, lcg = net:compute_vargrads()
+--        local lce, lcg = net:compute_mugrads()
+        return net:calc_LC(), lcg:double() end,
+        to_check,
+        epsilon)
+    print("difference: ",diff)
+    print(dc:min(), dc:max())
+    print(dc_est:min(), dc_est:max())
+
+end
+
 function main:run()
     local opt = require('config')
     -- global logger
@@ -122,8 +139,15 @@ function main:run()
     print('<torch> set nb of threads to ' .. torch.getnumthreads())
 --    local net = Convnet:buildModel(opt)
     local net = MLP:buildModel(opt)
-    local trainSet, testSet = data.getMnist()
---    local trainSet, testSet = data.getBacteriaFold(2, 10)
+    local trainSet, testSet
+    if opt.dataset == 'mnist' then
+        trainSet, testSet = data.getMnist()
+    else
+        trainSet, testSet = data.getBacteriaFold(1, 2)
+    end
+
+--    self:checkgrads(net)
+--    exit()
 
     while true do
         local trainAccuracy, trainError = self:train(net, trainSet, opt)

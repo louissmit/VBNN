@@ -99,7 +99,7 @@ if __name__ == "__main__":
         "accuracy" :  ['trainacc', 'devacc'],
         "lc" : ['lc'],
         # "variance" : ['variance']
-        "variance" : ['mean variance', 'var hat'],
+        "variance" : ['min variance', 'max variance', 'mean variance', 'var hat'],
         "means" : ['mean means', 'min. means', 'max. means'],
         "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
         "normratio" : ['mu normratio', 'var normratio']

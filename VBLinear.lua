@@ -14,6 +14,7 @@ function VBLinear:__init(inputSize, outputSize, opt)
     if opt.msr_init then
         self.var_init = 2/self.weight:size(2)
     end
+    print("var: ", self.var_init)
     self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(self.var_init))
     --    self.accGradSquared = torch.Tensor(outputSize, inputSize):zero()
     self.gradSum = torch.Tensor(outputSize, inputSize):zero()
@@ -76,8 +77,8 @@ end
 function VBLinear:compute_prior()
     self.vars = torch.exp(self.lvars)
     self.stdv = torch.sqrt(self.vars)
-    self.mu_hat = (1/self.W)*torch.sum(self.means)
---    self.mu_hat = 0
+--    self.mu_hat = (1/self.W)*torch.sum(self.means)
+    self.mu_hat = 0
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
 --    self.var_hat = torch.pow(0.075, 2)
@@ -110,7 +111,8 @@ end
 function VBLinear:accGradParameters(input, gradOutput, scale)
     parent.accGradParameters(self, input, gradOutput, scale)
     local grad = torch.mm(gradOutput:t(), input)
-    self.gradSum:add(torch.cmul(grad, torch.cmul(self.e, self.stdv)))
+    self.gradSum:add(torch.cmul(grad, torch.cdiv(self.e, self.stdv)))
+--    self.gradSum:add(torch.pow(grad, 2))
 --    self.accGradSquared:add(torch.pow(torch.mm(gradOutput:t(), input), 2))
 end
 
@@ -148,6 +150,8 @@ function VBLinear:update(opt)
         Log:add('vle grad', vleg:norm()/self.lvars:norm())
         Log:add('mlc grad', mlcg:norm()/self.means:norm())
         Log:add('mle grad', mleg:norm()/self.means:norm())
+        Log:add('min variance', vars:min())
+        Log:add('max variance', vars:max())
         Log:add('mean variance', vars:mean())
         Log:add('var hat', self.var_hat)
         Log:add('mean means', self.means:mean())
