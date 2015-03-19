@@ -32,8 +32,8 @@ function mlp:buildModel(opt)
     print("nr. of parameters: ", self.W)
 
 
-    if false then--opt.msr_init then
-            for i = 1, 6 do
+    if opt.msr_init then
+            for i = 1, 2 do
                 local weight = self.model:get(i*2).weight
                 local bias = self.model:get(i*2).bias
                 bias:zero()

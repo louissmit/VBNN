@@ -2,7 +2,7 @@ local vbmlp, parent = torch.class('VBMLP', 'MLP')
 
 function vbmlp:buildModel(opt)
     parent:buildModel(opt)
-    self.lvars = torch.Tensor(self.W):fill(torch.log(opt.var_init))
+    self.lvars = torch.Tensor(self.W):zero()--:fill(torch.log(opt.var_init))
     if opt.msr_init then
         local newp
         local totalsize = 1
@@ -10,11 +10,13 @@ function vbmlp:buildModel(opt)
             local weight = self.model:get(i*2).weight
             local size = weight:size(1)*weight:size(2)
             local bias = self.model:get(i*2).bias
+            local bias_size = bias:size(1)
+            print(bias:size())
             bias:zero()
             local var_init = torch.log(2/weight:size(2))
-            newp = torch.Tensor(size):fill(var_init)
-            self.lvars:narrow(1, totalsize, size):copy(newp)
-            totalsize = totalsize + size
+            newp = torch.Tensor(size+bias_size):fill(var_init)
+            self.lvars:narrow(1, totalsize, size+bias_size):copy(newp)
+            totalsize = totalsize + size+bias_size
         end
     end
     --    self.lvars:narrow(1, self.W-1010, 1010):fill(opt.var_init2)
@@ -71,7 +73,7 @@ function vbmlp:train(inputs, targets)
         LE = LE + err
         accuracy = accuracy + acc
 
-        self.var_gradsum:add(torch.cmul(self.gradParameters, torch.cmul(self.e, self.stdv)))
+        self.var_gradsum:add(torch.cmul(self.gradParameters, torch.cdiv(self.e, self.stdv)))
         self.gradsum:add(self.gradParameters)
         self.gradParameters:zero()
     end
@@ -93,8 +95,8 @@ function vbmlp:update()
     local mres, vres
     if self.opt.lc then
         mres = torch.add(mleg, mlcg)
---        vres = torch.add(vleg, vlcg)
-        vres = vleg
+        vres = torch.add(vleg, vlcg)
+--        vres = vleg
     else
         mres = mleg
         vres = vleg
@@ -112,8 +114,8 @@ function vbmlp:update()
     --    local varlc_normratio = torch.norm(update)/torch.norm(x)
     --    local mule_normratio = 0
     if self.opt.log then
---        Log:add('vlc grad', vlcg:norm())
---        Log:add('vle grad', vleg:norm())
+        Log:add('vlc grad', vlcg:norm())
+        Log:add('vle grad', vleg:norm())
         Log:add('mlc grad', mlcg:norm())
         Log:add('mle grad', mleg:norm())
         Log:add('var hat', self.var_hat)
@@ -126,7 +128,7 @@ function vbmlp:update()
         Log:add('min. means', self.means:min())
         Log:add('max. means', self.means:max())
         Log:add('mu normratio', mu_normratio)
---        Log:add('var normratio', var_normratio)
+        Log:add('var normratio', var_normratio)
     end
     if self.opt.print then
         print("LC: ", LC)

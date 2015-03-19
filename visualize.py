@@ -97,7 +97,7 @@ if __name__ == "__main__":
     to_plot = {
         "error" :  ['trainerr', 'deverr'],
         "accuracy" :  ['trainacc', 'devacc'],
-        "lc" : ['lc', 'lcfirst', 'lcsecond'],
+        "lc" : ['lc' ],
         "variance" : ['var hat', 'mean variance', 'min. variance', 'max. variance'],
         "means" : ['mean means', 'std means', 'min. means', 'max. means'],
         "grads" : ['mle grad', 'mlc grad', 'vle grad', 'vlc grad'],
