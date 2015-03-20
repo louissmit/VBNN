@@ -38,8 +38,8 @@ function mlp:buildModel(opt)
     self.parameters = parameters
     self.gradParameters = gradParameters
     self.W = parameters:size(1)
-    self.p = parameters:narrow(1, self.W-1010, 1010)
-    self.g = gradParameters:narrow(1, self.W-1010, 1010)
+    self.p = parameters:narrow(1, self.W-109, 110)
+    self.g = gradParameters:narrow(1, self.W-109, 110)
     print(self.model)
     print("nr. of parameters: ", self.W)
     local newp
@@ -114,10 +114,19 @@ function mlp:calc_lc(opt)
 end
 
 function mlp:update(opt)
-    local x, _, update = optim.adam(
-        function(_) return _, self.gradParameters:mul(1/opt.batchSize) end,
-        self.parameters,
-        self.state)
+    local x, _, update
+--    if opt.type == 'vb' then
+--        x, _, update = optim.adam(
+--            function(_) return _, self.g:mul(1/opt.batchSize) end,
+--            self.p,
+--            self.state)
+--    else
+        x, _, update = optim.adam(
+            function(_) return _, self.gradParameters:mul(1/opt.batchSize) end,
+            self.parameters,
+            self.state)
+--    end
+
     local normratio = torch.norm(update)/torch.norm(x)
     print("normratio:", normratio)
     if opt.type == 'vb' then

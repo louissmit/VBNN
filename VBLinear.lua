@@ -6,6 +6,7 @@ local u = require('utils')
 
 local VBLinear, parent = torch.class('nn.VBLinear', 'nn.Linear')
 
+mp=0.1
 function VBLinear:__init(inputSize, outputSize, opt)
     parent.__init(self, inputSize, outputSize)
     self.opt = opt
@@ -15,7 +16,7 @@ function VBLinear:__init(inputSize, outputSize, opt)
         self.var_init = 2/self.weight:size(2)
     end
     print("var: ", self.var_init)
-    self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(self.var_init))
+    self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(mp*self.var_init))
     --    self.accGradSquared = torch.Tensor(outputSize, inputSize):zero()
     self.gradSum = torch.Tensor(outputSize, inputSize):zero()
     self.W = outputSize*inputSize
@@ -93,7 +94,7 @@ end
 
 function VBLinear:compute_vargrads(opt)
     local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):div(2*opt.B)
-    return self.gradSum:div(2*opt.S):cmul(self.vars), lcg:cmul(self.vars)
+    return self.gradSum:div(2*opt.S):cmul(self.stdv), lcg:cmul(self.vars)
 end
 function VBLinear:calc_lc(opt)
     local LCfirst = torch.add(-torch.log(torch.sqrt(self.vars)), torch.log(torch.sqrt(self.var_hat)))
@@ -111,7 +112,7 @@ end
 function VBLinear:accGradParameters(input, gradOutput, scale)
     parent.accGradParameters(self, input, gradOutput, scale)
     local grad = torch.mm(gradOutput:t(), input)
-    self.gradSum:add(torch.cmul(grad, torch.cdiv(self.e, self.stdv)))
+    self.gradSum:add(torch.cmul(grad, self.e))
 --    self.gradSum:add(torch.pow(grad, 2))
 --    self.accGradSquared:add(torch.pow(torch.mm(gradOutput:t(), input), 2))
 end
@@ -121,10 +122,10 @@ function VBLinear:resetAcc()
 end
 
 function VBLinear:update(opt)
-    local x, _, update = optim.adam(
-        function(_) return LD, self.gradBias:mul(1/opt.batchSize) end,
-        self.bias,
-        self.biasState)
+--    local x, _, update = optim.adam(
+--        function(_) return LD, self.gradBias:mul(1/opt.batchSize) end,
+--        self.bias,
+--        self.biasState)
 --    local bias_normratio = torch.norm(update)/torch.norm(x)
     self:compute_prior()
     local mleg, mlcg = self:compute_mugrads(opt)
@@ -155,6 +156,7 @@ function VBLinear:update(opt)
         Log:add('mean variance', vars:mean())
         Log:add('var hat', self.var_hat)
         Log:add('mean means', self.means:mean())
+        Log:add('std means', self.means:std())
         Log:add('min. means', self.means:min())
         Log:add('max. means', self.means:max())
         Log:add('mu normratio', mu_normratio)

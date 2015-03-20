@@ -27,9 +27,9 @@ end
 
 opt.plot = true
 
-opt.B = (opt.trainSize/opt.batchSize)--*100
+opt.B = 100000--(opt.trainSize/opt.batchSize)--*100
 opt.hidden = {10}
-opt.S = 1
+opt.S = 5
 opt.testSamples = 5
 --opt.quicktest = true
 opt.log = true
@@ -41,8 +41,8 @@ torch.manualSeed(3)
 
 --opt.weight_init = 0.14--0.01
 opt.mu_init = 0.0
---opt.var_init = 0.1--torch.pow(0.75, 2)--torch.sqrt(2/opt.hidden[1])--0.01
-opt.msr_init = true
+opt.var_init = torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
+--opt.msr_init = true
 opt.pi_init = {
     mu = 5,
     var = 0.00001
