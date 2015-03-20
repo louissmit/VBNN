@@ -27,24 +27,24 @@ end
 
 opt.plot = true
 
-opt.B = (opt.trainSize/opt.batchSize)--*100
-opt.hidden = {10}
+opt.B = 1000--(opt.trainSize/opt.batchSize)--*100
+opt.hidden = {100, 100}
 opt.S = 5
 opt.testSamples = 5
 --opt.quicktest = true
 opt.log = true
-opt.print = true
+--opt.print = true
 --opt.normcheck = true
 --opt.plotlc = true
 --opt.viz = true
 
 torch.manualSeed(3)
 
-opt.mu_init = 0.0
---opt.weight_init = 0.075--torch.sqrt(2/100)
---opt.var_init = 0.01--torch.pow(0.075,2)
+opt.mu_init = 0
+opt.weight_init = 0.075--torch.sqrt(2/100)
+opt.var_init = torch.pow(0.075,2)
 --opt.var_prior = opt.var_init--0.01
-opt.msr_init = true
+--opt.msr_init = true
 opt.lc = true
 
 opt.pi_init = {
@@ -58,7 +58,7 @@ opt.state = {
 }
 opt.varState = {
 --    lambda = 1-1e-8,
-    learningRate = 0.01,
+    learningRate = 0.001,
 --    learningRateDecay = 0.01
 }
 opt.meanState = {

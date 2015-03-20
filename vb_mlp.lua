@@ -2,24 +2,30 @@ local vbmlp, parent = torch.class('VBMLP', 'MLP')
 
 function vbmlp:buildModel(opt)
     parent:buildModel(opt)
-    self.lvars = torch.Tensor(self.W):zero()--:fill(torch.log(opt.var_init))
+    self.lvars = torch.Tensor(self.W):fill(torch.log(opt.var_init))
     if opt.msr_init then
-        local newp
+        local newv, newm
         local totalsize = 1
-        for i = 1, 2 do
+        for i = 1, 1 do
             local weight = self.model:get(i*2).weight
-            local size = weight:size(1)*weight:size(2)
+            local weight_size = weight:size(1)*weight:size(2)
             local bias = self.model:get(i*2).bias
             local bias_size = bias:size(1)
-            print(bias:size())
+            local size = weight_size+bias_size
             bias:zero()
-            local var_init = torch.log(2/weight:size(2))
-            newp = torch.Tensor(size+bias_size):fill(var_init)
-            self.lvars:narrow(1, totalsize, size+bias_size):copy(newp)
-            totalsize = totalsize + size+bias_size
+            local var_init = 2/weight:size(2)
+            local lvar_init = torch.log(var_init)
+            newv = torch.Tensor(size):fill(lvar_init)
+            self.lvars:narrow(1, totalsize, size):copy(newv)
+
+--            newm = randomkit.normal(
+--                torch.Tensor(size):zero(),
+--                torch.Tensor(size):fill(torch.sqrt(var_init))):float()
+--            self.means:narrow(1, totalsize, size):copy(newm)
+            totalsize = totalsize + size
         end
     end
-    --    self.lvars:narrow(1, self.W-1010, 1010):fill(opt.var_init2)
+--    self.lvars:narrow(1, self.W-109, 110):fill(torch.log(0.1))
     if opt.mu_init == 0 then
         self.means = torch.Tensor(self.W):zero()
     else
@@ -73,7 +79,7 @@ function vbmlp:train(inputs, targets)
         LE = LE + err
         accuracy = accuracy + acc
 
-        self.var_gradsum:add(torch.cmul(self.gradParameters, torch.cdiv(self.e, self.stdv)))
+        self.var_gradsum:add(torch.cmul(self.gradParameters, self.e))
         self.gradsum:add(self.gradParameters)
         self.gradParameters:zero()
     end
@@ -195,7 +201,7 @@ end
 
 function vbmlp:compute_vargrads()
     local lcg = torch.add(-torch.pow(self.vars, -1), 1/self.var_hat):div(2*self.opt.B)
-    return self.var_gradsum:div(2*self.opt.S):cmul(self.vars), lcg:cmul(self.vars)
+    return self.var_gradsum:div(2*self.opt.S):cmul(self.stdv), lcg:cmul(self.vars)
 end
 
 function vbmlp:calc_LC()
@@ -211,14 +217,14 @@ function vbmlp:calc_LC()
     local LCsecond = torch.add(self.mu_sqe, torch.add(self.vars, -self.var_hat)):div(2*self.var_hat)
     local lcf = torch.div(LCfirst, self.opt.B):sum()
     local lcs = torch.div(LCsecond, self.opt.B):sum()
-    print("LCFirst: ", lcf)
-    print("LCSecond: ", lcs)
+--    print("LCFirst: ", lcf)
+--    print("LCSecond: ", lcs)
 --    Log:add('lcfirst', lcf)
 --    Log:add('lcsecond', lcs)
     --    print("LCthird: ", torch.sum(torch.div(vars, 2*self.var_hat):div(opt.B)))
     --    print('LCfourth: ', -opt.W/(2*opt.B))
     --    exit()
-    print("LC", torch.add(LCfirst, LCsecond):div(self.opt.B):sum())
+--    print("LC", torch.add(LCfirst, LCsecond):div(self.opt.B):sum())
     return torch.add(LCfirst, LCsecond):div(self.opt.B):sum()
 end
 
