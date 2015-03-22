@@ -80,13 +80,18 @@ function main:crossvalidate()
     local totalerr = 0
     local i = 1
     local k = 10
+
     Log = require('logger'):init(opt.network_name)
     while i <= k do
         local net = MLP:buildModel(opt)
         local trainAccuracy, trainError
         local testAccuracy, testError
+        local old_lc = 0
+        local new_lc = 0.00001
         local t = 1
-        while t <= max_epoch do
+        while new_lc > old_lc do
+            old_lc = new_lc
+--            while t <= max_epoch do
             local trainSet, testSet = data.getBacteriaFold(i, k)
             testAccuracy, testError = self:test(net, testSet, opt)
             print(testAccuracy, testError)
@@ -98,8 +103,8 @@ function main:crossvalidate()
                 Log:add('deverr-fold='..i, testError)
                 Log:add('trainerr-fold='..i, trainError)
                 if opt.type == 'vb' then
-                    local lc = net:calc_lc(opt)
-                    Log:add('lc-fold='..i, lc)
+                    new_lc = net:calc_lc(opt)
+                    Log:add('lc-fold='..i, new_lc)
                 end
                 Log:flush()
             end
@@ -134,16 +139,23 @@ end
 function main:run()
     local opt = require('config')
     -- global logger
-    Log = require('logger'):init(opt.network_name)
     torch.setnumthreads(opt.threads)
     print('<torch> set nb of threads to ' .. torch.getnumthreads())
 --    local net = Convnet:buildModel(opt)
-    local net = MLP:buildModel(opt)
+    local net
+    if opt.network_to_load ~= "" then
+        net = torch.load(opt.network_to_load..'/model')
+        Log = require('logger'):init(opt.network_name, true)
+    else
+        net = MLP:buildModel(opt)
+        Log = require('logger'):init(opt.network_name, false)
+    end
+
     local trainSet, testSet
     if opt.dataset == 'mnist' then
         trainSet, testSet = data.getMnist()
     else
-        trainSet, testSet = data.getBacteriaFold(1, 2)
+        trainSet, testSet = data.getBacteriaFold(1, 10)
     end
 
 --    self:checkgrads(net)

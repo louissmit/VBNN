@@ -9,7 +9,7 @@ function mlp:buildModel(opt)
 
     self.vb_indices = {}
     self.model = nn.Sequential()
-    self.model:add(nn.View(opt.input_size))
+    self.model:add(nn.Reshape(opt.input_size))
     if opt.type == 'vb' then
         self.model:add(nn.VBLinear(opt.input_size, opt.hidden[1], opt))
         table.insert(self.vb_indices, 2)
@@ -78,6 +78,7 @@ function mlp:run(inputs, targets)
     local df_do = self.criterion:backward(outputs, targets)
     self.model:backward(inputs, df_do)
     local error = self.criterion:forward(outputs, targets)
+--    local error = 1-torch.exp(-nll)
     local accuracy = u.get_accuracy(outputs, targets)
     return error, accuracy
 end
@@ -115,20 +116,24 @@ end
 
 function mlp:update(opt)
     local x, _, update
---    if opt.type == 'vb' then
---        x, _, update = optim.adam(
---            function(_) return _, self.g:mul(1/opt.batchSize) end,
---            self.p,
---            self.state)
---    else
-        x, _, update = optim.adam(
+    if opt.type == 'vb' then
+        x, _, update = optim.sgd(
+            function(_) return _, self.g:mul(1/opt.batchSize) end,
+            self.p,
+            self.state)
+    else
+        x, _, update = optim.sgd(
             function(_) return _, self.gradParameters:mul(1/opt.batchSize) end,
             self.parameters,
             self.state)
---    end
+        Log:add('mean means', self.parameters:mean())
+        Log:add('std means', self.parameters:std())
+        Log:add('min. means', self.parameters:min())
+        Log:add('max. means', self.parameters:max())
+    end
 
-    local normratio = torch.norm(update)/torch.norm(x)
-    print("normratio:", normratio)
+--    local normratio = torch.norm(update)/torch.norm(x)
+--    print("normratio:", normratio)
     if opt.type == 'vb' then
         for _, i in pairs(self.vb_indices) do
             self.model:get(i):update(opt)

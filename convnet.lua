@@ -93,6 +93,15 @@ function convnet:test(input, target)
     end
 end
 
+function convnet:calc_lc(opt)
+    local lc = 0
+    for _, i in pairs(self.vb_indices) do
+        lc = lc + self.model:get(i):calc_lc(opt):sum()
+    end
+    return lc
+end
+
+
 function convnet:update(opt)
     local x, _, update = optim.adam(
         function(_) return _, self.gradParameters:mul(1/opt.batchSize) end,

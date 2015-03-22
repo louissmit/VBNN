@@ -2,11 +2,11 @@ local u = require('utils')
 local inspect = require('inspect')
 local logger = {}
 
-function logger:init(dir)
+function logger:init(dir, append)
     os.execute('mkdir ' .. dir)
     self.dir = dir
     self.loggers = {}
-    self.append = false
+    self.append = append
 --        assert(not(u.file_exists(paths.concat(dir, id))), 'File already exists!')
     return self
 end
@@ -17,7 +17,9 @@ end
 
 function logger:add(id, value)
     if not self.loggers[id] then
-        io.open(paths.concat(self.dir, id), 'w'):write(""):close()
+        if not self.append then
+            io.open(paths.concat(self.dir, id), 'w'):write(""):close()
+        end
         self:_create(id, 'a')
     end
     self.loggers[id]:write(value..'\n')

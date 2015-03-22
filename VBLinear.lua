@@ -6,7 +6,7 @@ local u = require('utils')
 
 local VBLinear, parent = torch.class('nn.VBLinear', 'nn.Linear')
 
-mp=0.1
+mp=1
 function VBLinear:__init(inputSize, outputSize, opt)
     parent.__init(self, inputSize, outputSize)
     self.opt = opt
@@ -83,6 +83,7 @@ function VBLinear:compute_prior()
     self.mu_sqe = torch.add(self.means, -self.mu_hat):pow(2)
 
 --    self.var_hat = torch.pow(0.075, 2)
+--    self.var_hat = self.var_init--(1/self.W)*torch.sum(torch.add(self.vars, self.mu_sqe))
     self.var_hat = (1/self.W)*torch.sum(torch.add(self.vars, self.mu_sqe))
     return self.mu_hat, self.var_hat
 end
@@ -122,10 +123,10 @@ function VBLinear:resetAcc()
 end
 
 function VBLinear:update(opt)
---    local x, _, update = optim.adam(
---        function(_) return LD, self.gradBias:mul(1/opt.batchSize) end,
---        self.bias,
---        self.biasState)
+    local x, _, update = optim.sgd(
+        function(_) return LD, self.gradBias:mul(1/opt.batchSize) end,
+        self.bias,
+        self.biasState)
 --    local bias_normratio = torch.norm(update)/torch.norm(x)
     self:compute_prior()
     local mleg, mlcg = self:compute_mugrads(opt)
