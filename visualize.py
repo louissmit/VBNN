@@ -92,16 +92,16 @@ def update_plots(root, figures, types):
 #     figs = setup_plots(root, to_plot)
 #     update_plots(root, figs)
 if __name__ == "__main__":
-    root = "asdf"
+    root = "exp"
     # to_plot = ['trainerr', 'deverr']
     to_plot = {
-        "error" :  ['trainerr', 'deverr'],
-        "accuracy" :  ['trainacc', 'devacc'],
-        "lc" : ['lc'],
+        "error" :  ['lc','trainerr', 'deverr'],
+        # "accuracy" :  ['trainacc', 'devacc'],
+        # "lc" : ['lc'],
         # "variance" : ['variance']
         "variance" : ['min variance', 'max variance', 'mean variance', 'var hat'],
-        "means" : ['std means', 'mean means', 'min. means', 'max. means'],
-        "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
+        # "means" : ['std means', 'mean means', 'min. means', 'max. means'],
+        # "grads" : ['vle grad', 'vlc grad', 'mle grad', 'mlc grad'],
         "normratio" : ['mu normratio', 'var normratio']
     }
     # to_plot = {

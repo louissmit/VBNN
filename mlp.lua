@@ -118,12 +118,12 @@ function mlp:update(opt)
     local x, _, update
     if opt.type == 'vb' then
         x, _, update = optim.sgd(
-            function(_) return _, self.g:mul(1/opt.batchSize) end,
+            function(_) return _, self.g end,
             self.p,
             self.state)
     else
         x, _, update = optim.sgd(
-            function(_) return _, self.gradParameters:mul(1/opt.batchSize) end,
+            function(_) return _, self.gradParameters end,
             self.parameters,
             self.state)
         Log:add('mean means', self.parameters:mean())

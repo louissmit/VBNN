@@ -6,7 +6,6 @@ local u = require('utils')
 
 local VBLinear, parent = torch.class('nn.VBLinear', 'nn.Linear')
 
-mp=1
 function VBLinear:__init(inputSize, outputSize, opt)
     parent.__init(self, inputSize, outputSize)
     self.opt = opt
@@ -16,7 +15,7 @@ function VBLinear:__init(inputSize, outputSize, opt)
         self.var_init = 2/self.weight:size(2)
     end
     print("var: ", self.var_init)
-    self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(mp*self.var_init))
+    self.lvars = torch.Tensor(outputSize, inputSize):fill(torch.log(self.var_init))
     --    self.accGradSquared = torch.Tensor(outputSize, inputSize):zero()
     self.gradSum = torch.Tensor(outputSize, inputSize):zero()
     self.W = outputSize*inputSize
@@ -124,7 +123,7 @@ end
 
 function VBLinear:update(opt)
     local x, _, update = optim.sgd(
-        function(_) return LD, self.gradBias:mul(1/opt.batchSize) end,
+        function(_) return LD, self.gradBias end,
         self.bias,
         self.biasState)
 --    local bias_normratio = torch.norm(update)/torch.norm(x)
@@ -134,12 +133,12 @@ function VBLinear:update(opt)
     local vleg, vlcg = self:compute_vargrads(opt)
     local vgrad = torch.add(vleg, vlcg)
     local x, _, update = optim.adam(
-        function(_) return LD, mugrad:mul(1/opt.batchSize) end,
+        function(_) return LD, mugrad end,
         self.means,
         self.meanState)
     local mu_normratio = torch.norm(update)/torch.norm(x)
     local x, _, update = optim.adam(
-        function(_) return LD, vgrad:mul(1/opt.batchSize) end,
+        function(_) return LD, vgrad end,
         self.lvars,
         self.varState)
     local var_normratio = torch.norm(update)/torch.norm(x)

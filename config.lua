@@ -4,7 +4,7 @@ opt = {}
 
 opt.threads = 8
 opt.network_to_load = ""
-opt.network_name = "asdf"
+opt.network_name = "exp"
 opt.type = "vb"
 opt.dataset = 'mnist'
 opt.cuda = true
@@ -27,7 +27,7 @@ end
 
 opt.plot = true
 
-opt.B = 10000000000000--(opt.trainSize/opt.batchSize)--*100
+opt.B = 1000000--(opt.trainSize/opt.batchSize)--*100
 opt.hidden = {10}
 opt.S = 30
 opt.testSamples = 30
