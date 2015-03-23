@@ -1,46 +1,69 @@
 local opt = {}
 
 opt = {}
-opt.classes = {'0','1','2','3','4','5','6','7','8','9'}
-opt.threads = 1
+
+opt.threads = 8
 opt.network_to_load = ""
-opt.network_name = "vbbase"
+opt.network_name = "exp"
 opt.type = "vb"
---opt.cuda = true
-opt.trainSize = 100
-opt.testSize = 1000
+opt.dataset = 'mnist'
+opt.cuda = true
+opt.batchSize = 1
+opt.testBatchSize = 100
+
+if opt.dataset == 'mnist' then
+    opt.trainSize = 100
+    opt.testSize = 1000
+    opt.classes = {'0','1','2','3','4','5','6','7','8','9' }
+    opt.geometry = {28,28}
+    opt.input_size = opt.geometry[1]*opt.geometry[2]
+else
+    opt.trainSize = 90--100
+    opt.testSize = 9--1000
+    opt.classes = {'0','1'}
+    opt.testBatchSize = 1--49
+    opt.input_size = 2283
+end
 
 opt.plot = true
-opt.batchSize = 1
-opt.B = (opt.trainSize/opt.batchSize)--*100
-opt.hidden = {100}
-opt.S = 10
-opt.alpha = 0.8 -- NVIL
+
+opt.B = 1000000--(opt.trainSize/opt.batchSize)--*100
+opt.hidden = {10}
+opt.S = 30
+opt.testSamples = 30
+--opt.quicktest = true
+opt.log = true
 --opt.normcheck = true
 --opt.plotlc = true
 --opt.viz = true
--- fix seed
-opt.geometry = {28,28}
 
-opt.mu_init = 0.1
-opt.var_init = torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
+torch.manualSeed(3)
+
+--opt.weight_init = 0.14--0.01
+opt.mu_init = 0
+opt.var_init = 0.001--torch.pow(0.075, 2)--torch.sqrt(2/opt.hidden[1])--0.01
+--opt.msr_init = true
 opt.pi_init = {
     mu = 5,
     var = 0.00001
 }
 -- optimisation params
 opt.state = {
-    learningRate = 0.00000001,
+--    lambda = 1-1e-8,
+    learningRate = 0.001,
 }
 opt.varState = {
-    learningRate = 0.00001,
+--    lambda = 1-1e-8,
+    learningRate = 0.05,
 --    learningRateDecay = 0.01
 }
 opt.meanState = {
-    learningRate = 0.00000001,
+--    lambda = 1-1e-8,
+    learningRate = 0.0001,
 --    learningRateDecay = 0.01
 }
 opt.piState = {
+    lambda = 1-1e-8,
     learningRate = 0.00000001,
 }
 return opt

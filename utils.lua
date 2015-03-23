@@ -12,25 +12,18 @@ function utils.get_accuracy(outputs, targets)
    local correct, total = 0, 0
    for i = 1, targets:size(1) do
       total = total + 1
-      local _, index = outputs[i]:max(1)
+      local _, index
+      if outputs:dim() == 1 then
+          _, index = outputs:max(1)
+      else
+          _, index = outputs[i]:max(1)
+      end
+
       if index[1] == targets[i] then
          correct = correct + 1
       end
    end
    return (correct / total)*100
-end
-
-function utils.create_minibatch(dataset, index, batchSize, n, geometry)
-   local inputs = torch.Tensor(batchSize,1,geometry[1],geometry[2])
-   local targets = torch.Tensor(batchSize)
-   local k = 1
-   for i = index, math.min(index+batchSize-1, n) do
-      -- load new sample
-      inputs[k] = dataset.inputs:select(1,i)
-      targets[k] = dataset.targets[i]+1
-      k = k + 1
-   end
-   return inputs, targets
 end
 
 function utils.normalize(data)
@@ -71,16 +64,10 @@ end
 function utils.isnan(x) return x ~= x end
 
 function utils.norm_pdf(x, mu, sigma)
-    print(sigma:mean())
     local sigmasq = torch.pow(sigma,2)
-    print(x:mean())
-    print(mu:mean())
-    print(sigmasq:mean())
     local exp = torch.exp(torch.cdiv(torch.pow((x-mu), 2), sigmasq):mul(-0.5))
     exp:cdiv(torch.sqrt(sigmasq:mul(2*math.pi)))
     return exp
-
---    return torch.exp(-.5 * (x-mu)*(x-mu)/(sigma*sigma)) / torch.sqrt(2.0*math.pi*sigma*sigma)
 end
 
 function utils.safe_save(object, folder, name)
@@ -98,6 +85,17 @@ function utils.shallow_copy(t)
         t2[k] = v
     end
     return t2
+end
+
+function utils.shuffle(tensor)
+    return torch.randperm(tensor:size(1)):apply(function(i)
+        return tensor[i]
+    end)
+end
+
+function utils.file_exists(name)
+    local f=io.open(name,"r")
+    if f~=nil then io.close(f) return true else return false end
 end
 
 return utils
